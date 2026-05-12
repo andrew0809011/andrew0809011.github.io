@@ -1,0 +1,52 @@
+---
+title: "Tech Notes"
+description: "Quick tips and notes from my daily development workflow."
+---
+
+## Git Tips
+
+**Undo last commit but keep changes:**
+
+```bash
+git reset --soft HEAD~1
+```
+
+**Stash only staged changes:**
+
+```bash
+git stash --staged
+```
+
+---
+
+## VS Code Shortcuts
+
+| Action | Windows / Linux | Mac |
+|--------|-----------------|-----|
+| Open terminal | `` Ctrl+` `` | `` Ctrl+` `` |
+| Format document | `Shift+Alt+F` | `Shift+Option+F` |
+| Multi-cursor | `Ctrl+Alt+↓` | `Ctrl+Option+↓` |
+
+---
+
+## Node.js Snippets
+
+**Check which port is listening:**
+
+```bash
+# Windows
+netstat -ano | findstr :3000
+
+# Mac / Linux
+lsof -i :3000
+```
+
+**Quick HTTP server:**
+
+```bash
+npx serve .
+```
+
+---
+
+> This page is a living document — I'll keep adding notes as I learn new things.

@@ -1,0 +1,7 @@
+<svg width="160" height="40" viewBox="0 0 160 40" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="20" cy="20" r="18" fill="#60A5FA"/>
+  <text x="20" y="27" font-family="Georgia, serif" font-size="20" font-weight="bold"
+        text-anchor="middle" fill="white">A</text>
+  <text x="48" y="28" font-family="Georgia, serif" font-size="18" font-weight="600"
+        fill="#f1f5f9">Andrew's Blog</text>
+</svg>
