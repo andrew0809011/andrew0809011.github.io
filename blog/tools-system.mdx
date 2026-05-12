@@ -74,6 +74,236 @@ MCP 工具通过 `McpToolAdapter` 适配器包装，使得 MCP 服务器提供�
 
 ---
 
+## 工具如何"注入"到 LLM 中
+
+这是文档里最容易被忽略、却最关键的链路。每一次调用 LLM API，工具列表都会作为请求的一部分**整体传入**——这是 LLM 能够"知道"哪些工具可用的根本原因。
+
+### 完整链路（代码级）
+
+```mermaid
+flowchart TD
+    A["BaseTool 子类\n(e.g. FileEditTool)"] -->|"input_model\n= FileEditInput(BaseModel)"| B
+
+    subgraph schema["Schema 生成（to_api_schema）"]
+        B["input_model.model_json_schema()"] -->|"Pydantic 自动生成\nJSON Schema"| C["input_schema: {...}"]
+        D["tool.name\ntool.description"] --> E["组装 API 格式的 dict"]
+        C --> E
+    end
+
+    E --> F["ToolRegistry._tools\n{name → BaseTool}"]
+    F -->|"to_api_schema()\n遍历所有工具"| G["list[dict] — 全部工具的 schema"]
+
+    G -->|"每一轮对话"| H["ApiMessageRequest\n(tools=context.tool_registry.to_api_schema())"]
+    H -->|"_stream_once()"| I["params['tools'] = request.tools\n→ Anthropic API 调用"]
+
+    I --> J["LLM 收到工具列表\n决定调用哪个工具"]
+
+    style schema fill:#f0fdf4,stroke:#16a34a
+    style J fill:#dbeafe,stroke:#2563eb
+```
+
+### 关键代码节点
+
+**第 1 步：Pydantic → JSON Schema**（`base.py`）
+
+```python
+def to_api_schema(self) -> dict:
+    return {
+        "name": self.name,
+        "description": self.description,
+        "input_schema": self.input_model.model_json_schema(),  # ← Pydantic 自动生成
+    }
+```
+
+`model_json_schema()` 会把 Pydantic 模型里每个字段的类型、`Field(description=...)` 全部转成标准 JSON Schema。以 `file_edit` 为例，实际发给 LLM 的结构是：
+
+```json
+{
+  "name": "file_edit",
+  "description": "...",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "path":        { "type": "string", "description": "文件路径" },
+      "old_str":     { "type": "string", "description": "要替换的原始字符串" },
+      "new_str":     { "type": "string", "description": "替换后的新字符串" },
+      "replace_all": { "type": "boolean", "default": false, "description": "是否替换所有匹配" }
+    },
+    "required": ["path", "old_str", "new_str"]
+  }
+}
+```
+
+LLM 正是通过这个 JSON Schema 知道每个参数叫什么名字、什么类型、什么含义——**`Field(description=...)` 写得好不好直接影响 LLM 调用工具的准确性**。
+
+**第 2 步：注册表批量转换**（`base.py`）
+
+```python
+class ToolRegistry:
+    def to_api_schema(self) -> list[dict]:
+        return [tool.to_api_schema() for tool in self._tools.values()]
+```
+
+**第 3 步：每一轮都把全量工具传给 LLM**（`query.py` → `_stream_once`）
+
+```python
+# query.py: run_query() 中的对话循环
+async for event in context.api_client.stream_message(
+    ApiMessageRequest(
+        model=context.model,
+        messages=messages,
+        system_prompt=context.system_prompt,
+        max_tokens=context.max_tokens,
+        tools=context.tool_registry.to_api_schema(),   # ← 每次 API 调用都带上完整工具列表
+    )
+):
+    ...
+
+# client.py: _stream_once() 里直接放进 Anthropic SDK 参数
+if request.tools:
+    params["tools"] = request.tools   # ← 原封不动传给 Anthropic API
+```
+
+<Info>
+**为什么每轮都传一遍全量工具？**
+
+Anthropic API 是无状态的——每次请求都是独立的 HTTP 调用，没有"会话"概念。要让 LLM 知道有哪些工具可用，只能每次都附上工具列表。这也意味着工具越多，每次请求消耗的 input token 越多。
+</Info>
+
+### 工具调用的完整往返
+
+```mermaid
+sequenceDiagram
+    participant Q as run_query()
+    participant API as Anthropic API (LLM)
+    participant E as _execute_tool_call()
+
+    Q->>API: stream_message({messages, tools:[...全量schema...]})
+    API-->>Q: 流式返回文本 delta
+    API-->>Q: tool_use block {id, name, input}
+    Note over API: LLM 从 tools 里选一个工具<br/>按 input_schema 填参数
+
+    Q->>E: _execute_tool_call(name, id, input)
+    Note over E: Pydantic 校验 input<br/>权限检查<br/>tool.execute()
+    E-->>Q: ToolResultBlock {tool_use_id, content, is_error}
+
+    Q->>Q: messages.append(<br/>  ConversationMessage(role="user",<br/>    content=[ToolResultBlock, ...]))<br/>
+
+    Q->>API: 下一轮：messages 里包含 tool_result<br/>+ tools:[...全量schema...]
+    Note over Q: 循环直到 LLM 不再使用工具
+```
+
+---
+
+## 工具执行结果如何变成下一轮请求
+
+### ToolResultBlock 的产生
+
+`_execute_tool_call()` 在 `query.py` 里执行每一个工具调用，其内部步骤：
+
+```mermaid
+flowchart TD
+    A["LLM 返回 tool_use block\n{id: toolu_xxx, name: file_edit, input: {...}}"] --> B
+
+    subgraph exec["_execute_tool_call()"]
+        B["PRE_TOOL_USE hook"] --> C{"被 hook 拦截？"}
+        C -->|是| D["返回 ToolResultBlock(is_error=True)"]
+        C -->|否| E["tool_registry.get(name)\n找到 BaseTool 实例"]
+        E --> F{"工具存在？"}
+        F -->|否| G["返回 Unknown tool 错误"]
+        F -->|是| H["input_model.model_validate(tool_input)\nPydantic 校验参数"]
+        H --> I{"权限检查\npermission_checker.evaluate()"}
+        I -->|需要确认| J["permission_prompt() 弹出确认"]
+        J -->|用户拒绝| K["返回 Permission denied 错误"]
+        J -->|用户允许| L["tool.execute(parsed_input, context)"]
+        I -->|直接放行| L
+        L --> M["ToolResultBlock\n{tool_use_id, content, is_error}"]
+        M --> N["POST_TOOL_USE hook"]
+    end
+
+    N --> O["返回 ToolResultBlock"]
+
+    style exec fill:#f0fdf4,stroke:#16a34a
+    style D fill:#fee2e2,stroke:#dc2626
+    style G fill:#fee2e2,stroke:#dc2626
+    style K fill:#fee2e2,stroke:#dc2626
+    style O fill:#dbeafe,stroke:#2563eb
+```
+
+### 多工具并行执行
+
+当 LLM 在一次响应里请求**多个工具**时（Anthropic API 允许），`run_query()` 会并发执行：
+
+```python
+# 单工具：顺序执行
+if len(tool_calls) == 1:
+    result = await _execute_tool_call(context, tc.name, tc.id, tc.input)
+    tool_results = [result]
+
+# 多工具：asyncio.gather 并发执行
+else:
+    raw_results = await asyncio.gather(
+        *[_run(tc) for tc in tool_calls], return_exceptions=True
+    )
+    # 即使某个工具失败，其余工具的结果仍然保留
+    # 防止 Anthropic API 收到没有对应 tool_result 的 tool_use（会报错）
+```
+
+### 结果打包成 user message
+
+所有工具执行完毕后，把结果打包进一条 `role="user"` 的消息，追加到对话历史：
+
+```python
+messages.append(
+    ConversationMessage(role="user", content=tool_results)
+    # content = [ToolResultBlock, ToolResultBlock, ...]
+)
+```
+
+### 序列化为 Anthropic wire format
+
+下一轮调用 LLM 时，`ConversationMessage.to_api_param()` 把每个 `ToolResultBlock` 序列化为 API 要求的格式：
+
+```python
+# messages.py: serialize_content_block()
+{
+    "type": "tool_result",
+    "tool_use_id": "toolu_abc123",   # ← 必须与 tool_use block 的 id 对应
+    "content": "文件写入成功",
+    "is_error": False
+}
+```
+
+<Warning>
+**Anthropic 的硬性要求**：每一个 `tool_use` block 必须有一个 `tool_use_id` 相同的 `tool_result` 回复，否则下一次 API 调用会报错。这就是为什么即使工具执行异常，代码里也用 `return_exceptions=True` 确保每个工具都有对应的错误结果，而不是丢掉它。
+</Warning>
+
+### 完整的消息序列示意
+
+```
+turn 1 — 用户输入：
+  messages: [ {role:user, content:[TextBlock("帮我写个文件")]} ]
+
+turn 2 — LLM 决定用工具：
+  messages: [
+    {role:user,      content:[TextBlock("帮我写个文件")]},
+    {role:assistant, content:[TextBlock("好的"), ToolUseBlock(id="toolu_001", name="file_write", input:{...})]}
+  ]
+
+turn 3 — 工具结果回传：
+  messages: [
+    {role:user,      content:[TextBlock("帮我写个文件")]},
+    {role:assistant, content:[TextBlock("好的"), ToolUseBlock(id="toolu_001", ...)]},
+    {role:user,      content:[ToolResultBlock(tool_use_id="toolu_001", content="写入成功")]}
+                               ↑ 必须与 toolu_001 对应
+  ]
+
+turn 4 — LLM 最终回复（不再调用工具）：
+  LLM 看到工具执行成功，输出最终文本，stop
+```
+
+---
+
 ## 43+ 内置工具分类
 
 <CardGroup cols={3}>
