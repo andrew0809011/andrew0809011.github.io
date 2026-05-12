@@ -51,7 +51,8 @@
               "blog/architecture-overview",
               "blog/startup-flow",
               "blog/message-loop",
-              "blog/query-engine-runtime"
+              "blog/query-engine-runtime",
+              "blog/dual-loop-architecture"
             ]
           }
         ]
