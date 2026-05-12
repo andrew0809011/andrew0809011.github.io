@@ -53,7 +53,8 @@
               "blog/message-loop",
               "blog/query-engine-runtime",
               "blog/dual-loop-architecture",
-              "blog/tools-system"
+              "blog/tools-system",
+              "blog/skill-system"
             ]
           }
         ]
