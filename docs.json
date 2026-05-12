@@ -49,7 +49,8 @@
             "expanded": false,
             "pages": [
               "blog/architecture-overview",
-              "blog/startup-flow"
+              "blog/startup-flow",
+              "blog/message-loop"
             ]
           }
         ]
