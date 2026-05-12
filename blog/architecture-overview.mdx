@@ -22,6 +22,15 @@ description: "深入解析 OpenHarness 开源 AI Agent 基础设施框架的整�
   </Card>
 </CardGroup>
 
+### 设计理念
+
+OpenHarness 的架构遵循几个核心设计原则：
+
+1. **前后端分离** — UI 层与 Agent 核心通过 JSON-lines 协议通信，使得同一套 Agent 引擎可以服务于 TUI、CLI、API 等多种交互形态
+2. **工具即能力** — 所有 Agent 能力（文件操作、代码搜索、终端执行等）都以统一的 `BaseTool` 接口暴露，方便扩展
+3. **安全分层** — 权限系统独立于工具实现，通过多级规则（路径、命令、工具白名单）在治理层统一管控
+4. **可组合的运行时** — `RuntimeBundle` 将所有运行时依赖打包为一个数据容器，启动时一次性组装，组件间松耦合
+
 **ohmo** 是基于 OpenHarness 构建的个人 AI Agent 应用，支持 Feishu / Slack / Telegram / Discord 等平台交互，能够独立执行代码编写、测试运行、PR 创建等任务。
 
 ---
@@ -56,13 +65,29 @@ flowchart TB
 
 > **路径**: `src/openharness/engine/query_engine.py`
 
-QueryEngine 是 OpenHarness 的核心组件，负责管理与 LLM 的对话循环：
+QueryEngine 是 OpenHarness 的核心组件，负责管理与 LLM 的对话循环。它是整个 Agent 的"驾驶员"——持有对话历史，驱动 `model → tool` 的多轮循环：
 
 - **对话管理**: 维护消息历史 (`_messages`)
 - **工具调用循环**: 处理 `Assistant → Tool Use → 执行工具 → 返回结果` 的完整链路
 - **上下文压缩**: 自动压缩超过阈值的历史消息
 - **Token 追踪**: 通过 `CostTracker` 追踪 API 使用量
 - **Coordinator 集成**: 支持协调器模式下的上下文传递
+
+**核心消息循环：**
+
+```mermaid
+flowchart LR
+    A["用户消息"] --> B["调用 LLM"]
+    B --> C{"响应含 tool_use?"}
+    C -->|"是"| D["执行工具"]
+    D --> E["追加 tool_result"]
+    E --> B
+    C -->|"否"| F["返回最终回复"]
+
+    style A fill:#dbeafe,stroke:#2563eb
+    style F fill:#dcfce7,stroke:#16a34a
+    style D fill:#fef9c3,stroke:#ca8a04
+```
 
 **核心方法:**
 
@@ -211,6 +236,25 @@ ohmo/
   <Card title="DingTalk 钉钉" icon="bell" />
   <Card title="Email" icon="envelope" />
 </CardGroup>
+
+---
+
+### 运行时容器 (RuntimeBundle)
+
+> **路径**: `src/openharness/ui/runtime.py`
+
+`RuntimeBundle` 是会话的"配件盒"——在 Session 启动时由 `build_runtime()` 一次性组装，将所有运行时依赖打包到一个数据容器中：
+
+| 字段 | 作用 |
+|------|------|
+| `api_client` | 与 LLM 通信（Anthropic / OpenAI / Copilot） |
+| `tool_registry` | 所有可用工具的注册表（内置 + MCP + Plugin） |
+| `engine` | QueryEngine 实例 |
+| `permission_checker` | 权限检查器 |
+| `hook_executor` | 钩子系统 |
+| `mcp_client_manager` | MCP 服务器连接管理 |
+
+这种设计使得组件间松耦合，且整个运行时可以方便地用于不同的交互模式（TUI、CLI Print、API 后端等）。
 
 ---
 

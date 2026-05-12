@@ -48,7 +48,8 @@
             "icon": "diagram-project",
             "expanded": false,
             "pages": [
-              "blog/architecture-overview"
+              "blog/architecture-overview",
+              "blog/startup-flow"
             ]
           }
         ]
