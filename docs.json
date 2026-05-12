@@ -54,7 +54,8 @@
               "blog/query-engine-runtime",
               "blog/dual-loop-architecture",
               "blog/tools-system",
-              "blog/skill-system"
+              "blog/skill-system",
+              "blog/system-prompt-assembly"
             ]
           }
         ]
