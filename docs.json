@@ -36,14 +36,6 @@
             "pages": ["index"]
           },
           {
-            "group": "Getting Started",
-            "icon": "rocket",
-            "expanded": false,
-            "pages": [
-              "blog/hello-world"
-            ]
-          },
-          {
             "group": "Tech Notes",
             "icon": "code",
             "expanded": false,
@@ -52,7 +44,7 @@
             ]
           },
           {
-            "group": "Projects & Architecture",
+            "group": "OpenHarness",
             "icon": "diagram-project",
             "expanded": false,
             "pages": [
