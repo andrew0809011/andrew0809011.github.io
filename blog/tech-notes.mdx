@@ -1,37 +1,49 @@
 ---
 title: "Tech Notes"
-description: "Quick tips and notes from my daily development workflow."
+description: "日常开发工作流中积累的快捷技巧与实用片段，持续更新。"
 ---
 
-## Git Tips
+<Info>
+  这是一个持续维护的文档，随着我学到新东西会不断添加内容。
+</Info>
 
-**Undo last commit but keep changes:**
+## Git
+
+**撤销最后一次提交（保留改动）：**
 
 ```bash
 git reset --soft HEAD~1
 ```
 
-**Stash only staged changes:**
+**仅暂存已暂存的改动：**
 
 ```bash
 git stash --staged
 ```
 
----
+**查看某个文件的修改历史：**
 
-## VS Code Shortcuts
-
-| Action | Windows / Linux | Mac |
-|--------|-----------------|-----|
-| Open terminal | `` Ctrl+` `` | `` Ctrl+` `` |
-| Format document | `Shift+Alt+F` | `Shift+Option+F` |
-| Multi-cursor | `Ctrl+Alt+↓` | `Ctrl+Option+↓` |
+```bash
+git log --follow -p -- path/to/file
+```
 
 ---
 
-## Node.js Snippets
+## VS Code 快捷键
 
-**Check which port is listening:**
+| 操作 | Windows / Linux | Mac |
+|------|-----------------|-----|
+| 打开终端 | `` Ctrl+` `` | `` Ctrl+` `` |
+| 格式化文档 | `Shift+Alt+F` | `Shift+Option+F` |
+| 多光标向下 | `Ctrl+Alt+↓` | `Ctrl+Option+↓` |
+| 重命名符号 | `F2` | `F2` |
+| 跳转到定义 | `F12` | `F12` |
+
+---
+
+## Node.js
+
+**查看哪个进程占用了端口：**
 
 ```bash
 # Windows
@@ -41,12 +53,40 @@ netstat -ano | findstr :3000
 lsof -i :3000
 ```
 
-**Quick HTTP server:**
+**快速启动本地 HTTP 服务：**
 
 ```bash
 npx serve .
 ```
 
+**检查包的真实安装路径：**
+
+```bash
+npm root -g
+```
+
 ---
 
-> This page is a living document — I'll keep adding notes as I learn new things.
+## Python
+
+**创建并激活虚拟环境：**
+
+```bash
+python -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+
+# Mac / Linux
+source .venv/bin/activate
+```
+
+**一次性安装所有依赖：**
+
+```bash
+pip install -r requirements.txt
+```
+
+<Tip>
+  使用 `pip freeze > requirements.txt` 导出当前环境的依赖清单。
+</Tip>

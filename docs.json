@@ -1,11 +1,11 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
+  "theme": "maple",
   "name": "Andrew's Blog",
   "colors": {
-    "primary": "#2563EB",
-    "light": "#60A5FA",
-    "dark": "#1D4ED8"
+    "primary": "#0060FF",
+    "light": "#688FE8",
+    "dark": "#0034FF"
   },
   "favicon": "/favicon.svg",
   "logo": {
@@ -18,7 +18,12 @@
         "label": "GitHub",
         "href": "https://github.com/andrew0809011"
       }
-    ]
+    ],
+    "primary": {
+      "type": "button",
+      "label": "GitHub Profile",
+      "href": "https://github.com/andrew0809011"
+    }
   },
   "navigation": {
     "tabs": [
@@ -26,14 +31,32 @@
         "tab": "Blog",
         "groups": [
           {
-            "group": "About",
+            "group": "Welcome",
+            "icon": "house",
             "pages": ["index"]
           },
           {
-            "group": "Posts",
+            "group": "Getting Started",
+            "icon": "rocket",
+            "expanded": false,
             "pages": [
-              "blog/hello-world",
+              "blog/hello-world"
+            ]
+          },
+          {
+            "group": "Tech Notes",
+            "icon": "code",
+            "expanded": false,
+            "pages": [
               "blog/tech-notes"
+            ]
+          },
+          {
+            "group": "Projects & Architecture",
+            "icon": "diagram-project",
+            "expanded": false,
+            "pages": [
+              "blog/architecture-overview"
             ]
           }
         ]
@@ -48,6 +71,11 @@
         }
       ]
     }
+  },
+  "contextual": {
+    "options": [
+      "copy"
+    ]
   },
   "footer": {
     "socials": {

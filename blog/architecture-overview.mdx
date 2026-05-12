@@ -1,0 +1,314 @@
+---
+title: "OpenHarness 架构总览"
+description: "深入解析 OpenHarness 开源 AI Agent 基础设施框架的整体架构、核心组件与设计理念。"
+---
+
+## 项目简介
+
+**OpenHarness** 是一个开源的 AI Agent 基础设施框架，提供 Agent 运行时所需的核心能力。它是 Claude Code 的开源 Python 实现。
+
+<CardGroup cols={2}>
+  <Card title="工具使用 (Tool-use)" icon="wrench">
+    内置 43+ 工具，涵盖文件操作、代码搜索、终端执行、Web 访问等场景
+  </Card>
+  <Card title="技能系统 (Skills)" icon="bolt">
+    动态加载 `.md` 技能文件，支持内置、用户自定义和插件技能
+  </Card>
+  <Card title="记忆系统 (Memory)" icon="brain">
+    CLAUDE.md 自动发现、MEMORY.md 持久化，跨会话保持上下文
+  </Card>
+  <Card title="多 Agent 协调" icon="diagram-project">
+    基于 Swarm 架构，支持 subprocess、in-process、tmux、iTerm2 后端
+  </Card>
+</CardGroup>
+
+**ohmo** 是基于 OpenHarness 构建的个人 AI Agent 应用，支持 Feishu / Slack / Telegram / Discord 等平台交互，能够独立执行代码编写、测试运行、PR 创建等任务。
+
+---
+
+## 整体架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         用户交互层 (UI Layer)                     │
+│   React TUI (Ink)  │  Textual TUI  │  CLI Print  │  API         │
+└─────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         运行时层 (Runtime Layer)                  │
+│   QueryEngine  │  Session  │  Bridge  │  Coordinator Mode       │
+└─────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         核心服务层 (Core Services)                │
+│   API Client  │  Auth  │  Memory  │  MCP  │  LSP               │
+│   Cron        │  Config │  Tasks   │  Swarm Team               │
+└─────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         工具层 (Tools Layer)                      │
+│   File Ops │ Bash │ Search │ Web │ Agent │ Task │ MCP │ ...     │
+└─────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         安全与治理层 (Governance)                  │
+│   Permission Modes │ Path Rules │ Command Rules │ Sandboxing    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 关键组件详解
+
+### 查询引擎 (QueryEngine)
+
+> **路径**: `src/openharness/engine/query_engine.py`
+
+QueryEngine 是 OpenHarness 的核心组件，负责管理与 LLM 的对话循环：
+
+- **对话管理**: 维护消息历史 (`_messages`)
+- **工具调用循环**: 处理 `Assistant → Tool Use → 执行工具 → 返回结果` 的完整链路
+- **上下文压缩**: 自动压缩超过阈值的历史消息
+- **Token 追踪**: 通过 `CostTracker` 追踪 API 使用量
+- **Coordinator 集成**: 支持协调器模式下的上下文传递
+
+**核心方法:**
+
+| 方法 | 说明 |
+|------|------|
+| `submit_message()` | 提交用户消息并执行查询循环 |
+| `continue_pending()` | 继续被中断的工具循环 |
+| `has_pending_continuation()` | 检查是否有待处理的工具结果 |
+
+---
+
+### 工具系统 (Tools)
+
+> **路径**: `src/openharness/tools/`
+
+所有工具继承自 `BaseTool` 抽象基类：
+
+```python
+class BaseTool(ABC):
+    name: str                    # 工具名称
+    description: str             # 工具描述
+    input_model: type[BaseModel] # Pydantic 输入模型
+
+    @abstractmethod
+    async def execute(self, arguments: BaseModel, context: ToolExecutionContext) -> ToolResult:
+        """执行工具"""
+```
+
+**43+ 内置工具分类:**
+
+| 类别 | 工具 | 说明 |
+|------|------|------|
+| **文件操作** | `file_read_tool`, `file_write_tool`, `file_edit_tool`, `glob_tool` | 文件读写和搜索 |
+| **代码搜索** | `grep_tool`, `lsp_tool` | 文本搜索和代码智能 |
+| **终端** | `bash_tool` | 执行 Shell 命令 |
+| **Agent** | `agent_tool` | 创建子 Agent 任务 |
+| **任务** | `task_create_tool`, `task_list_tool`, `task_get_tool`, `task_stop_tool` | 后台任务管理 |
+| **团队** | `team_create_tool`, `team_delete_tool`, `send_message_tool` | 多 Agent 协调 |
+| **技能** | `skill_tool` | 动态加载技能文件 |
+| **MCP** | `mcp_tool`, `mcp_auth_tool`, `list_mcp_resources_tool` | MCP 协议支持 |
+| **Cron** | `cron_create_tool`, `cron_list_tool`, `cron_delete_tool` | 定时任务 |
+| **Web** | `web_search_tool`, `web_fetch_tool` | 网络搜索和获取 |
+
+---
+
+### API 客户端层
+
+> **路径**: `src/openharness/api/`
+
+支持多种 LLM Provider：
+
+| Provider | 客户端 | 说明 |
+|----------|--------|------|
+| Anthropic | `AnthropicApiClient` | Claude API，支持 OAuth |
+| OpenAI | `OpenAIApiClient` | OpenAI 兼容 API |
+| GitHub Copilot | `CopilotClient` | Copilot 代理模式 |
+| Codex | `CodexClient` | OpenAI Codex |
+
+<Tip>
+所有客户端均内置指数退避重试机制、流式响应处理和 Token 使用追踪。
+</Tip>
+
+---
+
+### 权限与治理系统
+
+> **路径**: `src/openharness/permissions/`
+
+**权限模式** (`PermissionMode`):
+
+<CardGroup cols={3}>
+  <Card title="FULL_AUTO" icon="play">
+    全自动模式，无需任何人工确认
+  </Card>
+  <Card title="DEFAULT" icon="shield-check">
+    默认模式，敏感操作需确认
+  </Card>
+  <Card title="PLAN" icon="ban">
+    计划模式，阻止所有修改操作
+  </Card>
+</CardGroup>
+
+**安全检查层（按优先级）:**
+
+1. **敏感路径保护** — 内置 SSH keys、AWS credentials 等路径黑名单
+2. **路径规则** — Glob 模式匹配允许/拒绝路径
+3. **命令规则** — 禁止危险命令（如 `rm -rf /`）
+4. **工具白名单/黑名单** — 显式允许/拒绝特定工具
+
+---
+
+### 记忆系统 (Memory)
+
+> **路径**: `src/openharness/memory/`
+
+- **CLAUDE.md 发现**: 自动检测并注入项目上下文
+- **MEMORY.md 持久化**: 跨会话记忆存储
+- **自动扫描**: `MemoryScan` 定期扫描记忆文件
+- **搜索**: 支持记忆内容检索
+
+---
+
+### Swarm 多 Agent 系统
+
+> **路径**: `src/openharness/swarm/`
+
+| 后端类型 | 说明 |
+|----------|------|
+| `subprocess` | 子进程后台 Agent |
+| `in_process` | 进程内 Agent |
+| `tmux` | Tmux 窗格可视化 |
+| `iterm2` | iTerm2 窗格可视化 |
+
+**核心组件:**
+- `Mailbox` — Agent 间消息传递
+- `TeamLifecycle` — 团队生命周期管理
+- `WorktreeManager` — Git worktree 隔离
+
+---
+
+## ohmo 应用架构
+
+**ohmo** 是基于 OpenHarness 的个人 Agent 应用：
+
+```
+ohmo/
+├── cli.py              # CLI 入口
+├── gateway/            # 网关服务（多平台消息接入）
+│   ├── service.py      # 网关服务实现
+│   ├── bridge.py       # 与 OpenHarness 桥接
+│   └── models.py       # 数据模型
+├── runtime.py          # ohmo 运行时
+├── session_storage.py  # 会话存储
+├── workspace.py        # 工作区管理
+├── memory.py           # 记忆管理
+└── prompts.py          # 提示词模板
+```
+
+**支持的接入渠道:**
+
+<CardGroup cols={3}>
+  <Card title="Telegram" icon="paper-plane" />
+  <Card title="Slack" icon="slack" />
+  <Card title="Discord" icon="discord" />
+  <Card title="Feishu 飞书" icon="comments" />
+  <Card title="DingTalk 钉钉" icon="bell" />
+  <Card title="Email" icon="envelope" />
+</CardGroup>
+
+---
+
+## 数据流向
+
+```
+用户输入
+    │
+    ▼
+┌─────────────┐
+│  UI (React) │◄──── 渲染 Assistant 回复
+└─────────────┘
+    │ JSON Protocol
+    ▼
+┌─────────────┐
+│ QueryEngine │◄──── 管理对话历史
+└─────────────┘
+    │ 工具调用
+    ▼
+┌─────────────┐
+│ToolRegistry │
+└─────────────┘
+    │
+    ▼
+┌─────────────┐
+│  工具实现   │◄──── 权限检查
+└─────────────┘
+    │
+    ▼
+  执行结果
+```
+
+---
+
+## 配置系统
+
+**OpenHarness 配置文件位置**: `~/.openharness/`
+
+```
+~/.openharness/
+├── config.json              # 主配置
+├── credentials.json         # 凭据存储
+├── copilot_auth.json        # Copilot 认证
+├── mcp_servers.json         # MCP 服务器配置
+├── tasks/                   # 任务记录
+└── memory/
+    └── <project_id>/
+        └── MEMORY.md
+```
+
+**ohmo 配置** (`~/.ohmo/`):
+
+```
+~/.ohmo/
+├── soul.md              # Agent 人设
+├── user.md              # 用户信息
+├── state.json           # 运行状态
+├── gateway.json         # 网关配置
+└── channels/            # 渠道配置
+```
+
+---
+
+## 技术栈
+
+| 组件 | 技术 |
+|------|------|
+| 后端 | Python 3.10+, Pydantic, Typer |
+| API 客户端 | Anthropic SDK, OpenAI SDK, httpx |
+| TUI | Ink (React), TypeScript |
+| 配置 | YAML, JSON |
+| 测试 | pytest, pytest-asyncio |
+| 任务调度 | croniter |
+| 通信 | WebSockets |
+
+---
+
+## 测试策略
+
+```
+tests/
+├── unit/              # 单元测试
+├── integration/       # 集成测试
+└── e2e/               # 端到端测试（6 个测试套件）
+```
+
+<Info>
+当前已通过 114+ 测试，覆盖核心工具调用、权限系统、记忆系统和多 Agent 协调场景。
+</Info>
