@@ -169,13 +169,25 @@ class ReactBackendHost:
         # 3. 发送 ready 事件告知前端
         await self._emit(BackendEvent.ready(...))
         
-        # 4. 进入消息循环
-        while self._running:
-            request = await self._request_queue.get()
-            if request.type == "submit_line":
-                async for event in self._bundle.engine.submit_message(text):
-                    stdout_write(json.dumps(event))
+        # 4. 启动独立的 stdin 读取协程
+        reader = asyncio.create_task(self._read_requests())
+        
+        # 5. 进入消息循环
+        try:
+            while self._running:
+                request = await self._request_queue.get()
+                if request.type == "submit_line":
+                    async for event in self._bundle.engine.submit_message(text):
+                        stdout_write(json.dumps(event))
+        finally:
+            reader.cancel()
 ```
+
+<Info>
+**为什么需要独立的 reader 协程？**
+
+`sys.stdin.buffer.readline()` 是阻塞调用。如果放在主循环里，处理请求时就无法及时响应新的输入或 interrupt 信号。因此 `_read_requests()` 作为独立 Task 通过 `asyncio.to_thread()` 在线程中读取 stdin，再把请求放入 `asyncio.Queue`，主循环从 Queue 消费——实现了 **读取与处理的解耦**。
+</Info>
 
 `build_runtime()` 组装的 `RuntimeBundle` 包含了 Agent 运行所需的全部组件：
 - `QueryEngine` — Agent 核心对话引擎
