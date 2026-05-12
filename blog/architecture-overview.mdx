@@ -29,36 +29,24 @@ mode: "wide"
 
 ## 整体架构
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         用户交互层 (UI Layer)                     │
-│   React TUI (Ink)  │  Textual TUI  │  CLI Print  │  API         │
-└─────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                         运行时层 (Runtime Layer)                  │
-│   QueryEngine  │  Session  │  Bridge  │  Coordinator Mode       │
-└─────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                         核心服务层 (Core Services)                │
-│   API Client  │  Auth  │  Memory  │  MCP  │  LSP               │
-│   Cron        │  Config │  Tasks   │  Swarm Team               │
-└─────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                         工具层 (Tools Layer)                      │
-│   File Ops │ Bash │ Search │ Web │ Agent │ Task │ MCP │ ...     │
-└─────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                         安全与治理层 (Governance)                  │
-│   Permission Modes │ Path Rules │ Command Rules │ Sandboxing    │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    UI["<b>用户交互层 UI Layer</b><br/>React TUI (Ink) &nbsp;│&nbsp; Textual TUI &nbsp;│&nbsp; CLI Print &nbsp;│&nbsp; API"]
+    RT["<b>运行时层 Runtime Layer</b><br/>QueryEngine &nbsp;│&nbsp; Session &nbsp;│&nbsp; Bridge &nbsp;│&nbsp; Coordinator Mode"]
+    CS["<b>核心服务层 Core Services</b><br/>API Client &nbsp;│&nbsp; Auth &nbsp;│&nbsp; Memory &nbsp;│&nbsp; MCP &nbsp;│&nbsp; LSP<br/>Cron &nbsp;│&nbsp; Config &nbsp;│&nbsp; Tasks &nbsp;│&nbsp; Swarm Team"]
+    TL["<b>工具层 Tools Layer</b><br/>File Ops &nbsp;│&nbsp; Bash &nbsp;│&nbsp; Search &nbsp;│&nbsp; Web &nbsp;│&nbsp; Agent &nbsp;│&nbsp; Task &nbsp;│&nbsp; MCP &nbsp;│&nbsp; ..."]
+    GV["<b>安全与治理层 Governance</b><br/>Permission Modes &nbsp;│&nbsp; Path Rules &nbsp;│&nbsp; Command Rules &nbsp;│&nbsp; Sandboxing"]
+
+    UI --> RT
+    RT --> CS
+    CS --> TL
+    TL --> GV
+
+    style UI fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    style RT fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+    style CS fill:#dcfce7,stroke:#16a34a,color:#14532d
+    style TL fill:#fef9c3,stroke:#ca8a04,color:#713f12
+    style GV fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
 ```
 
 ---
@@ -229,31 +217,28 @@ ohmo/
 
 ## 数据流向
 
-```
-用户输入
-    │
-    ▼
-┌─────────────┐
-│  UI (React) │◄──── 渲染 Assistant 回复
-└─────────────┘
-    │ JSON Protocol
-    ▼
-┌─────────────┐
-│ QueryEngine │◄──── 管理对话历史
-└─────────────┘
-    │ 工具调用
-    ▼
-┌─────────────┐
-│ToolRegistry │
-└─────────────┘
-    │
-    ▼
-┌─────────────┐
-│  工具实现   │◄──── 权限检查
-└─────────────┘
-    │
-    ▼
-  执行结果
+```mermaid
+flowchart LR
+    User(["👤 用户输入"])
+    UI["UI React TUI"]
+    QE["QueryEngine<br/><small>管理对话历史</small>"]
+    TR["ToolRegistry"]
+    Tool["工具实现"]
+    Result(["✅ 执行结果"])
+
+    User -->|"提交消息"| UI
+    UI -->|"JSON Protocol"| QE
+    QE -->|"工具调用"| TR
+    TR --> Tool
+    Tool -->|"权限检查"| Tool
+    Tool -->|"结果返回"| QE
+    QE -->|"渲染回复"| UI
+    Tool --> Result
+
+    style User fill:#dbeafe,stroke:#2563eb
+    style Result fill:#dcfce7,stroke:#16a34a
+    style QE fill:#ede9fe,stroke:#7c3aed
+    style Tool fill:#fef9c3,stroke:#ca8a04
 ```
 
 ---
