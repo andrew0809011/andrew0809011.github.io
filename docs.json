@@ -50,7 +50,8 @@
             "pages": [
               "blog/architecture-overview",
               "blog/startup-flow",
-              "blog/message-loop"
+              "blog/message-loop",
+              "blog/query-engine-runtime"
             ]
           }
         ]
