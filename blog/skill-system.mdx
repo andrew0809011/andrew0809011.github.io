@@ -62,24 +62,71 @@ flowchart LR
 | `simplify.md` | simplify | 代码简化 |
 | `test.md` | test | 测试编写规范 |
 
-每个文件都是标准 Markdown，带 YAML frontmatter：
+内置技能文件**不使用 YAML frontmatter**，采用 Markdown 标题 + 首段描述的格式：
 
 ```markdown
----
-name: commit
-description: Create a conventional Git commit message from staged changes
----
+# commit
 
-# Commit Skill
+Create clean, well-structured git commits.
 
-## Steps
-1. Run `git diff --staged` to see staged changes
-2. ...
+## When to use
+...
 ```
+
+**解析逻辑**（`bundled/__init__.py` → `_parse_frontmatter`）：
+
+```mermaid
+flowchart TD
+    A["读取 *.md 文件\ndefault_name = 文件名(不含扩展名)"] --> B{"第一行是 '---'？\n（YAML frontmatter）"}
+
+    B -->|是| C["逐行查找 name: / description:\n手动字符串匹配"]
+    C --> D{"找到 description？"}
+    D -->|是| E["返回 name, description"]
+    D -->|否| F
+
+    B -->|否| F["Fallback：遍历所有行"]
+    F --> G{"以 '# ' 开头？"}
+    G -->|是| H["name = 标题文本"]
+    H --> F
+    G -->|否| I{"非空且不以 --- 或 # 开头？"}
+    I -->|是| J["description = 首个段落文本（截断 200 字符）\n返回 name, description"]
+    I -->|否| F
+
+    style E fill:#dcfce7,stroke:#16a34a
+    style J fill:#dcfce7,stroke:#16a34a
+```
+
+以 `commit.md` 为例，解析过程：
+1. 第一行 `# commit` → 不是 `---`，跳过 YAML 分支
+2. Fallback 循环：遇到 `# commit` → `name = "commit"`
+3. 遇到 `Create clean, well-structured git commits.` → `description = "Create clean..."`
+4. 返回 `("commit", "Create clean, well-structured git commits.")`
 
 ### 2. 用户技能（User）
 
-放在 `~/.openharness/skills/<技能名>/SKILL.md`，用户自定义。目录名即技能名。
+放在 `~/.openharness/skills/<技能名>/SKILL.md`，用户自定义。**目录名**作为 `default_name`。
+
+**解析逻辑**（`loader.py` → `_parse_skill_markdown`）与内置技能有两点不同：
+
+| | 内置技能 (`_parse_frontmatter`) | 用户/插件技能 (`_parse_skill_markdown`) |
+|---|---|---|
+| YAML 解析 | 手动字符串匹配（`name:` / `description:` 前缀）| `yaml.safe_load()`（完整 YAML 支持）|
+| default_name | 文件名（不含 `.md`） | 目录名 |
+| Fallback | 相同（标题 + 首段）| 相同 |
+
+用户技能推荐使用 YAML frontmatter 格式（支持完整 YAML 语法）：
+
+```markdown
+---
+name: my-deploy
+description: Deploy the project to production using our internal pipeline
+---
+
+# My Deploy Skill
+...
+```
+
+如果没有 frontmatter，也能解析——目录名作为 name，第一个非标题段落作为 description。
 
 ### 3. 插件技能（Plugin）
 
