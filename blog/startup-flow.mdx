@@ -177,8 +177,9 @@ class ReactBackendHost:
             while self._running:
                 request = await self._request_queue.get()
                 if request.type == "submit_line":
-                    async for event in self._bundle.engine.submit_message(text):
-                        stdout_write(json.dumps(event))
+                    await self._process_line(line)
+                    # async for event in self._bundle.engine.submit_message(text):
+                    #    stdout_write(json.dumps(event))
         finally:
             reader.cancel()
 ```
