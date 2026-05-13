@@ -55,7 +55,9 @@
               "blog/dual-loop-architecture",
               "blog/tools-system",
               "blog/skill-system",
-              "blog/system-prompt-assembly"
+              "blog/system-prompt-assembly",
+              "blog/api-client-architecture",
+              "blog/memory-system"
             ]
           }
         ]
