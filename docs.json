@@ -57,7 +57,8 @@
               "blog/skill-system",
               "blog/system-prompt-assembly",
               "blog/api-client-architecture",
-              "blog/memory-system"
+              "blog/memory-system",
+              "blog/mcp-configuration"
             ]
           }
         ]

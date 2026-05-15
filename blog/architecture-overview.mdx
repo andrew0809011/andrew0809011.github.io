@@ -292,11 +292,12 @@ flowchart LR
 
 ```
 ~/.openharness/
-├── config.json              # 主配置
+├── settings.json            # 主配置（含 mcp_servers 字段）
 ├── credentials.json         # 凭据存储
 ├── copilot_auth.json        # Copilot 认证
-├── mcp_servers.json         # MCP 服务器配置
-├── tasks/                   # 任务记录
+├── data/
+│   ├── sessions/            # 会话记录
+│   └── tasks/               # 后台任务输出
 └── memory/
     └── <project_id>/
         └── MEMORY.md

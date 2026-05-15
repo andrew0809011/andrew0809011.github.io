@@ -1,0 +1,364 @@
+---
+title: "MCP 服务器配置详解"
+description: "深入解析 OpenHarness 的 MCP（Model Context Protocol）集成架构，以及如何配置、管理、认证 MCP 服务器。"
+---
+
+## 什么是 MCP
+
+**MCP（Model Context Protocol）** 是一种开放协议，允许 AI Agent 通过标准化接口调用外部工具和资源。OpenHarness 内置 MCP 客户端，可在运行时连接任意 MCP 兼容服务器，将其提供的工具自动注册到 Agent 的工具链中。
+
+```mermaid
+flowchart LR
+    QE["QueryEngine"]
+    TR["ToolRegistry"]
+    MCM["McpClientManager"]
+    S1["MCP Server A\n(stdio)"]
+    S2["MCP Server B\n(HTTP)"]
+    S3["MCP Server C\n(WebSocket)"]
+
+    QE -->|"tool_use 请求"| TR
+    TR -->|"mcp_tool 代理"| MCM
+    MCM -->|"stdio"| S1
+    MCM -->|"http"| S2
+    MCM -->|"ws"| S3
+
+    style QE fill:#ede9fe,stroke:#7c3aed
+    style MCM fill:#dcfce7,stroke:#16a34a
+    style S1 fill:#fef9c3,stroke:#ca8a04
+    style S2 fill:#fef9c3,stroke:#ca8a04
+    style S3 fill:#fef9c3,stroke:#ca8a04
+```
+
+> **核心源码**: `src/openharness/mcp/`
+> - `types.py` — 配置模型（`McpStdioServerConfig` / `McpHttpServerConfig` / `McpWebSocketServerConfig`）
+> - `client.py` — `McpClientManager`，负责连接管理与工具调用代理
+> - `config.py` — `load_mcp_server_configs()`，合并 settings + plugins 的配置
+
+---
+
+## 配置文件位置
+
+MCP 服务器配置统一写在 `~/.openharness/settings.json` 的顶层 `mcp_servers` 字段中，**没有单独的 `mcp_servers.json`**：
+
+```json title="~/.openharness/settings.json"
+{
+  "mcp_servers": {
+    "服务器名称": { ...配置... }
+  }
+}
+```
+
+---
+
+## 三种传输类型
+
+### stdio（最常用）
+
+启动本地子进程，通过标准输入/输出与 MCP 服务器通信。适合 `uvx`、`npx`、`python -m` 形式的本地工具。
+
+```json
+{
+  "mcp_servers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-filesystem", "/home/user/projects"],
+      "env": {
+        "SOME_VAR": "value"
+      },
+      "cwd": "/home/user"
+    }
+  }
+}
+```
+
+| 字段 | 必填 | 类型 | 说明 |
+|------|:----:|------|------|
+| `type` | ✅ | `"stdio"` | 固定值 |
+| `command` | ✅ | string | 可执行文件，如 `uvx`、`npx`、`python` |
+| `args` | — | string[] | 命令行参数 |
+| `env` | — | dict | 额外注入的环境变量（API Token 等） |
+| `cwd` | — | string | 工作目录，默认继承 OpenHarness 当前目录 |
+
+### http
+
+连接远程 HTTP MCP 服务，使用 Streamable HTTP 协议。适合部署在云端或容器中的 MCP 服务。
+
+```json
+{
+  "mcp_servers": {
+    "remote-api": {
+      "type": "http",
+      "url": "https://my-mcp-server.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer my-token"
+      }
+    }
+  }
+}
+```
+
+| 字段 | 必填 | 类型 | 说明 |
+|------|:----:|------|------|
+| `type` | ✅ | `"http"` | 固定值 |
+| `url` | ✅ | string | 服务端点 URL（`http://` 或 `https://`） |
+| `headers` | — | dict | HTTP 请求头，常用于 Bearer Token 认证 |
+
+### ws（WebSocket）
+
+连接远程 WebSocket MCP 服务，适合需要双向实时通信的场景。
+
+```json
+{
+  "mcp_servers": {
+    "ws-service": {
+      "type": "ws",
+      "url": "wss://my-mcp-server.example.com/mcp",
+      "headers": {
+        "X-Api-Key": "my-key"
+      }
+    }
+  }
+}
+```
+
+| 字段 | 必填 | 类型 | 说明 |
+|------|:----:|------|------|
+| `type` | ✅ | `"ws"` | 固定值 |
+| `url` | ✅ | string | 服务端点 URL（`ws://` 或 `wss://`） |
+| `headers` | — | dict | WebSocket 握手时携带的请求头 |
+
+---
+
+## CLI 管理命令
+
+OpenHarness 提供 `oh mcp` 子命令组管理 MCP 服务器：
+
+```bash
+# 查看所有已配置的 MCP 服务器
+oh mcp list
+
+# 添加 stdio 类型服务器（第二个参数为 JSON 字符串）
+oh mcp add filesystem '{"type":"stdio","command":"uvx","args":["mcp-server-filesystem","/tmp"]}'
+
+# 添加 HTTP 类型服务器
+oh mcp add my-api '{"type":"http","url":"https://api.example.com/mcp","headers":{"Authorization":"Bearer token"}}'
+
+# 添加 WebSocket 类型服务器
+oh mcp add ws-svc '{"type":"ws","url":"wss://api.example.com/mcp"}'
+
+# 删除服务器
+oh mcp remove filesystem
+```
+
+<Tip>
+`oh mcp add` 直接修改 `~/.openharness/settings.json`，也可以手动编辑该文件达到同等效果。
+</Tip>
+
+---
+
+## 在 TUI 中管理认证
+
+在交互式 TUI 中输入以下斜杠命令，无需重启即可更新认证（写入后需重启会话生效）：
+
+### `/mcp` — 查看状态
+
+```
+/mcp
+```
+
+显示所有已配置 MCP 服务器的连接状态、工具数量等。
+
+### `/mcp auth` — 设置认证
+
+**HTTP / WebSocket 服务器（Bearer Token）**
+
+```
+/mcp auth <server> <token>
+```
+
+自动写入 `headers.Authorization = "Bearer <token>"`。
+
+**HTTP / WebSocket 服务器（自定义 Header）**
+
+```
+/mcp auth <server> header <header-key> <value>
+```
+
+**stdio 服务器（环境变量）**
+
+```
+/mcp auth <server> <token>
+```
+
+默认写入 `env.MCP_AUTH_TOKEN = "Bearer <token>"`。
+
+```
+/mcp auth <server> env GITHUB_TOKEN <token>
+```
+
+指定自定义环境变量名，直接写入原始值。
+
+<Warning>
+`/mcp auth` 修改完成后会提示 **"Restart session to reconnect"**，需要重新进入会话才能使新认证生效。
+</Warning>
+
+---
+
+## 运行时架构
+
+```mermaid
+flowchart TB
+    subgraph "启动阶段"
+        S["load_settings()"] -->|"settings.mcp_servers"| LM["load_mcp_server_configs()"]
+        P["load_plugins()"] -->|"plugin.mcp_servers"| LM
+        LM -->|"合并后的配置 dict"| MCM["McpClientManager"]
+        MCM -->|"connect_all()"| C1["连接 Server A"]
+        MCM --> C2["连接 Server B"]
+        MCM --> C3["连接 Server C"]
+    end
+
+    subgraph "工具调用阶段"
+        LLM["LLM tool_use"] --> MT["mcp_tool"]
+        MT -->|"server_name + tool_name"| MCM2["McpClientManager.call_tool()"]
+        MCM2 -->|"MCP session"| EXT["外部 MCP 服务器"]
+        EXT -->|"CallToolResult"| MCM2
+        MCM2 --> RES["ToolResult → LLM"]
+    end
+
+    style MCM fill:#dcfce7,stroke:#16a34a
+    style MCM2 fill:#dcfce7,stroke:#16a34a
+    style LLM fill:#dbeafe,stroke:#2563eb
+    style EXT fill:#fef9c3,stroke:#ca8a04
+```
+
+**插件合并规则**: 插件提供的 MCP 服务器自动以 `plugin-name:server-name` 形式合并，不会覆盖用户手动配置的同名服务器（`setdefault` 语义）。
+
+---
+
+## 常用 MCP 服务器配置示例
+
+<CodeGroup>
+
+```json GitHub
+{
+  "mcp_servers": {
+    "github": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-github"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here"
+      }
+    }
+  }
+}
+```
+
+```json Filesystem
+{
+  "mcp_servers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "mcp-server-filesystem",
+        "/home/user/projects",
+        "/tmp"
+      ]
+    }
+  }
+}
+```
+
+```json PostgreSQL
+{
+  "mcp_servers": {
+    "postgres": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-postgres"],
+      "env": {
+        "DATABASE_URL": "postgresql://user:pass@localhost:5432/mydb"
+      }
+    }
+  }
+}
+```
+
+```json Brave Search
+{
+  "mcp_servers": {
+    "brave-search": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "BSA_your_key_here"
+      }
+    }
+  }
+}
+```
+
+```json 远程 HTTP 服务
+{
+  "mcp_servers": {
+    "my-service": {
+      "type": "http",
+      "url": "https://mcp.example.com/v1",
+      "headers": {
+        "Authorization": "Bearer your-token",
+        "X-Tenant-ID": "my-org"
+      }
+    }
+  }
+}
+```
+
+</CodeGroup>
+
+---
+
+## 验证配置
+
+使用 `--dry-run` 标志验证 MCP 配置，**不会真正启动任何外部进程**：
+
+```bash
+oh --dry-run
+```
+
+输出中关注以下字段：
+
+```
+Configured MCP
+- github: stdio -> uvx mcp-server-github (ok)
+- postgres: stdio -> uvx mcp-server-postgres (ok)
+
+Validation
+- mcp config errors: 0        ← 0 表示配置格式无误
+```
+
+常见错误提示：
+
+| 错误信息 | 原因 | 解决方案 |
+|---------|------|---------|
+| `missing command` | stdio 配置缺少 `command` 字段 | 补充 `command` 字段 |
+| `command not found in PATH` | 命令不在 PATH 中 | 安装对应工具或使用绝对路径 |
+| `cwd does not exist` | `cwd` 路径不存在 | 检查并修正 `cwd` 路径 |
+| `invalid http url` | URL 格式错误或协议不匹配 | 确认 URL 以 `http://` 或 `https://` 开头 |
+
+---
+
+## 连接状态说明
+
+运行时每个 MCP 服务器的连接状态（`McpConnectionStatus`）有以下四种：
+
+| 状态 | 说明 |
+|------|------|
+| `pending` | 初始状态，尚未尝试连接 |
+| `connected` | 连接成功，工具可用 |
+| `failed` | 连接失败，`detail` 字段包含错误原因 |
+| `disabled` | 该传输类型当前构建不支持 |
+
+使用 `/mcp` 斜杠命令可在 TUI 中实时查看当前连接状态。
