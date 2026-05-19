@@ -1,0 +1,589 @@
+---
+title: "Keycloak SSO 认证流程"
+description: "B2B Copilot Web 前端 Keycloak SSO 集成：token 获取、缓存、注入、过期刷新与登录重定向恢复。"
+---
+
+export const PrivateGate = ({ children }) => {
+  const [unlocked, setUnlocked] = React.useState(false)
+  const [typed, setTyped] = React.useState('')
+  const [shake, setShake] = React.useState(false)
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    // 1. localStorage 持久化 — 之前解锁过，直接开门
+    if (localStorage.getItem('__author_kc') === '1') {
+      setUnlocked(true)
+      return
+    }
+
+    // 2. URL Hash — 访问 #unlock 自动解锁
+    const doUnlock = () => {
+      if (window.location.hash === '#unlock') {
+        localStorage.setItem('__author_kc', '1')
+        setUnlocked(true)
+      }
+    }
+    doUnlock()
+    window.addEventListener('hashchange', doUnlock)
+
+    // 3. Console 命令 — 打开 DevTools 输入 unlock()
+    window.unlock = () => {
+      localStorage.setItem('__author_kc', '1')
+      setUnlocked(true)
+      console.log(
+        '%c🔓  Welcome back, Andrew.',
+        'color:#22c55e;font-size:18px;font-weight:bold;text-shadow:0 0 8px #22c55e'
+      )
+      console.log('%c   Access granted to private article.', 'color:#6ee7b7;font-size:13px')
+    }
+
+    // 4. Konami Code 彩蛋 — ↑↑↓↓←→←→ 解锁
+    const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight']
+    let seq = []
+    const onKey = (e) => {
+      seq.push(e.key)
+      if (seq.length > KONAMI.length) seq.shift()
+      if (seq.join(',') === KONAMI.join(',')) {
+        localStorage.setItem('__author_kc', '1')
+        setUnlocked(true)
+        console.log('%c🎮 Konami unlock!', 'color:#a78bfa;font-size:20px;font-weight:bold')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+
+    return () => {
+      window.removeEventListener('hashchange', doUnlock)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [])
+
+  const tryPassword = () => {
+    if (typed.trim() === 'andrew') {
+      localStorage.setItem('__author_kc', '1')
+      setUnlocked(true)
+    } else {
+      setShake(true)
+      setTimeout(() => setShake(false), 600)
+      setTyped('')
+    }
+  }
+
+  if (unlocked) return React.createElement(React.Fragment, null, children)
+
+  return (
+    <div style={{
+      minHeight: '60vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '24px',
+      padding: '48px 24px',
+      background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
+      borderRadius: '16px',
+      border: '1px solid rgba(99,102,241,0.3)',
+      boxShadow: '0 0 60px rgba(99,102,241,0.1)',
+      fontFamily: 'monospace',
+    }}>
+      {/* 锁图标 */}
+      <div style={{
+        fontSize: '64px',
+        lineHeight: 1,
+        filter: 'drop-shadow(0 0 20px rgba(99,102,241,0.8))',
+        animation: 'pulse 2s infinite',
+      }}>🔒</div>
+
+      <div style={{ textAlign: 'center' }}>
+        <div style={{
+          fontSize: '22px',
+          fontWeight: 'bold',
+          color: '#c7d2fe',
+          marginBottom: '8px',
+          letterSpacing: '0.05em',
+        }}>Private Article</div>
+        <div style={{
+          fontSize: '13px',
+          color: '#6366f1',
+          letterSpacing: '0.15em',
+          textTransform: 'uppercase',
+        }}>Author Access Only</div>
+      </div>
+
+      {/* 密码输入框 */}
+      <div style={{
+        display: 'flex',
+        gap: '8px',
+        animation: shake ? 'shake 0.5s' : 'none',
+      }}>
+        <input
+          type="password"
+          placeholder="passphrase..."
+          value={typed}
+          onChange={e => setTyped(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && tryPassword()}
+          style={{
+            background: 'rgba(99,102,241,0.1)',
+            border: '1px solid rgba(99,102,241,0.4)',
+            borderRadius: '8px',
+            padding: '10px 16px',
+            color: '#e0e7ff',
+            fontSize: '14px',
+            outline: 'none',
+            width: '200px',
+            letterSpacing: '0.1em',
+          }}
+        />
+        <button
+          onClick={tryPassword}
+          style={{
+            background: 'rgba(99,102,241,0.8)',
+            border: 'none',
+            borderRadius: '8px',
+            padding: '10px 18px',
+            color: '#fff',
+            fontSize: '14px',
+            cursor: 'pointer',
+            fontFamily: 'monospace',
+          }}
+        >→</button>
+      </div>
+
+      {/* 提示区域 */}
+      <div style={{
+        background: 'rgba(15,23,42,0.8)',
+        border: '1px solid rgba(99,102,241,0.2)',
+        borderRadius: '10px',
+        padding: '16px 24px',
+        maxWidth: '380px',
+        width: '100%',
+      }}>
+        <div style={{ color: '#4ade80', fontSize: '12px', marginBottom: '8px', letterSpacing: '0.1em' }}>
+          // 三种解锁方式
+        </div>
+        <div style={{ color: '#94a3b8', fontSize: '12px', lineHeight: '1.8' }}>
+          <span style={{ color: '#818cf8' }}>①</span> 输入暗语回车<br/>
+          <span style={{ color: '#818cf8' }}>②</span> DevTools Console 输入 <span style={{
+            background: 'rgba(99,102,241,0.2)',
+            padding: '1px 6px',
+            borderRadius: '4px',
+            color: '#a5b4fc',
+            fontFamily: 'monospace',
+          }}>unlock()</span><br/>
+          <span style={{ color: '#818cf8' }}>③</span> URL 末尾加 <span style={{
+            background: 'rgba(99,102,241,0.2)',
+            padding: '1px 6px',
+            borderRadius: '4px',
+            color: '#a5b4fc',
+            fontFamily: 'monospace',
+          }}>#unlock</span><br/>
+          <span style={{ color: '#818cf8' }}>④</span> <span style={{ color: '#6366f1' }}>↑↑↓↓←→←→</span> Konami Code
+        </div>
+      </div>
+
+      <div style={{ color: '#334155', fontSize: '11px', letterSpacing: '0.1em' }}>
+        解锁后浏览器记住状态，无需再次输入
+      </div>
+
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.08); }
+        }
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          20% { transform: translateX(-8px); }
+          40% { transform: translateX(8px); }
+          60% { transform: translateX(-6px); }
+          80% { transform: translateX(6px); }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+<PrivateGate>
+
+## 整体流程概览
+
+```
+用户访问页面
+    │
+    ▼
+[normal-form.tsx] 检测已有 session + isLoggedIn
+    │ 已登录 → 直接跳转 /apps
+    │ 未登录 ↓
+    ▼
+[sso-auth.tsx] 点击 SSO 登录按钮
+    │
+    ▼
+[sso.ts] getUserOAuth2SSOUrl() 构造 Keycloak 授权 URL
+    │
+    ▼
+浏览器跳转到 Keycloak 授权页面完成认证
+    │
+    ▼
+Keycloak 回调 /api/auth/sso?code=xxx
+    │
+    ▼
+[app/api/auth/sso/route.ts] 用 code 换取 session_id，写入 httpOnly cookie
+    │
+    ▼
+跳转 /apps，登录完成
+    │
+    ▼
+后续所有 API 请求：
+[fetch.ts] beforeRequestAuthorization → fetchKeycloakAccessToken()
+    │  命中缓存（20s 内）→ 直接使用
+    │  缓存过期 → 请求 /sso/oauth2/access-token（携带 session cookie）
+    ▼
+请求头注入 Authorization: Bearer <access_token>
+    │
+    ▼
+后端 API 验证 token
+    │ 401（Keycloak token 过期，无法刷新）↓
+    ▼
+[fetch.ts] fetchKeycloakAccessToken 401 handler
+    │  1. 保存当前 URL 到 localStorage['oauth_authorize_pending']（3 分钟 TTL）
+    │  2. 清除 has_sso_session cookie（防止自动跳过 SSO 验证死循环）
+    │  3. 跳转 /signin
+    ▼
+用户重新 SSO 登录 → Keycloak → /api/auth/sso → /apps
+    │
+    ▼
+[app-initializer.tsx] AppInitializer.useEffect
+    │  resolvePostLoginRedirect → 读 oauth_authorize_pending
+    └─ location.replace(savedUrl) → 回到原页面 ✅
+```
+
+---
+
+## 1. 登录入口检测 — `normal-form.tsx`
+
+**文件路径：** `web/app/signin/normal-form.tsx`
+
+登录页初始化时，`init()` 函数检测是否已登录：
+
+```typescript
+const hasSession = document.cookie.includes('session=')
+
+if (isLoggedIn && hasSession) {
+  setIsRedirecting(true)
+  const redirectUrl = resolvePostLoginRedirect(searchParams)
+  router.replace(redirectUrl || '/apps')
+  return
+}
+```
+
+<Note>
+  `isLoggedIn` 来自 `useIsLogin()` hook，调用后端 `/console/api/setup` 检查。  
+  `hasSession` 检测 cookie 是否包含 `session=` 字符串（包含 `has_sso_session=1`），两者都满足才自动跳转。
+</Note>
+
+---
+
+## 2. SSO 登录触发 — `sso-auth.tsx`
+
+**文件路径：** `web/app/signin/components/sso-auth.tsx`
+
+```typescript
+else if (protocol === SSOProtocol.OAuth2) {
+  setRedirect(searchParams.get('redirect_path'))  // 保存登录前的页面路径
+  getUserOAuth2SSOUrl().then((url) => {
+    window.location.href = url  // 跳转到 Keycloak 授权页
+  })
+}
+```
+
+`setRedirect` 通过 `useSigninRedirect` hook 将 `redirect_path` 存入 `localStorage`，登录后恢复。
+
+---
+
+## 3. 构造 Keycloak 授权 URL — `service/sso.ts`
+
+**文件路径：** `web/service/sso.ts`
+
+```typescript
+export const getUserOAuth2SSOUrl = async (): Promise<string> => {
+  const redirectUriOrigin = process.env.NEXT_PUBLIC_WEB_PREFIX as string
+  const params = {
+    client_id: process.env.KEYCLOAK_CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: `${redirectUriOrigin}/api/auth/sso`,
+    scope: 'openid',
+  }
+  const url = new URL(
+    `${process.env.KEYCLOAK_BASE_URL}/auth/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/auth`
+  )
+  Object.entries(params).forEach(([key, value]) => {
+    url.searchParams.append(key, value as string)
+  })
+  return url.toString()
+}
+```
+
+<AccordionGroup>
+  <Accordion title="关键环境变量">
+    | 变量 | 说明 |
+    |---|---|
+    | `KEYCLOAK_BASE_URL` | Keycloak 服务器地址 |
+    | `KEYCLOAK_REALM` | Keycloak Realm 名称 |
+    | `KEYCLOAK_CLIENT_ID` | Keycloak 客户端 ID |
+    | `NEXT_PUBLIC_WEB_PREFIX` | 前端部署域名，用于构造回调地址 |
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 4. OAuth2 回调处理 — `app/api/auth/sso/route.ts`
+
+Keycloak 认证成功后，携带 `code` 参数回调 `/api/auth/sso`：
+
+```typescript
+export async function GET(request: NextApiRequest) {
+  const authorizationCode = new URL(request.url!).searchParams.get('code')
+
+  // 1. 用 code 换取 session_id
+  const serverResponse = await fetch(
+    `${getLoginApiPrefix()}/console/api/sso/oauth2/callback?${params.toString()}`
+  )
+  const sessionId = (await serverResponse.json()).data?.session_id
+
+  // 2. 写入 httpOnly cookie（不可被 JS 读取）
+  response.cookies.set('session_id', sessionId, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: isProd,
+    maxAge: 24 * 60 * 60,
+    path: '/',
+  })
+
+  // 3. 写入非 httpOnly 标记，供前端 JS 检测
+  response.cookies.set('has_sso_session', '1', {
+    httpOnly: false,
+    sameSite: 'lax',
+    // ...
+  })
+
+  // 4. 跳转 /apps
+  return NextResponse.redirect(new URL(`${redirectUriOrigin}/apps`))
+}
+```
+
+<Warning>
+  **不设置 `domain`**：避免 INT/PROD 多环境的 cookie 互相覆盖。
+</Warning>
+
+---
+
+## 5. Access Token 获取与缓存 — `service/fetch.ts`
+
+每次发 API 请求前，自动获取短时效的 access token 并注入 Authorization header。
+
+### 5.1 缓存机制
+
+```typescript
+function createKeycloakAccessTokenFetcher() {
+  const cacheDuration = 20000  // 20 秒缓存
+  let cachedAccessToken: string | undefined
+  let tokenTimestamp: number | undefined
+  let isFetching = false
+
+  return async function getAccessToken() {
+    const now = Date.now()
+
+    // 命中缓存
+    if (cachedAccessToken && tokenTimestamp && now - tokenTimestamp < cacheDuration)
+      return cachedAccessToken
+
+    // 防并发：等待其他请求完成
+    if (isFetching) {
+      while (isFetching) await new Promise(r => setTimeout(r, 100))
+      return cachedAccessToken!
+    }
+
+    isFetching = true
+    try {
+      const response = await fetch(`${API_PREFIX}/sso/oauth2/access-token`, {
+        credentials: 'include',  // 携带 session cookie
+      })
+      const data = await response.json()
+      cachedAccessToken = data.access_token
+      tokenTimestamp = now
+
+      // 401 处理
+      if (response.status === 401) {
+        cachedAccessToken = undefined
+        tokenTimestamp = undefined
+        const currentUrl = location.pathname + location.search
+        localStorage.setItem('oauth_authorize_pending', JSON.stringify({ value: currentUrl }))
+        document.cookie = 'has_sso_session=; Max-Age=0; path=/'  // 清除防死循环
+        location.href = `${location.origin}${basePath}/signin`
+      }
+    } finally {
+      isFetching = false
+    }
+    return cachedAccessToken
+  }
+}
+```
+
+<Tip>
+  **为什么清除 `has_sso_session`？**  
+  若不清除，`normal-form.tsx` 会因 `isLoggedIn && hasSession=true` 自动跳回 `/apps`，而 Keycloak token 仍然 401，形成无限死循环。
+</Tip>
+
+### 5.2 请求自动注入
+
+```typescript
+const beforeRequestAuthorization: BeforeRequestHook = async (request) => {
+  const token = await fetchKeycloakAccessToken()
+  const requestUrl = new URL(request.url)
+  const apiUrl = new URL(process.env.NEXT_PUBLIC_API_PREFIX as string)
+
+  // 只对同域 API 请求注入
+  if (requestUrl.hostname === apiUrl.hostname)
+    request.headers.set('Authorization', `Bearer ${token}`)
+}
+```
+
+---
+
+## 6. Token 刷新与重新登录 — `service/refresh-token.ts`
+
+### 6.1 跨标签页防重复刷新
+
+```typescript
+async function getNewAccessToken(timeout: number) {
+  // 检查其他标签页是否正在刷新
+  const isRefreshingSign = localStorage.getItem('is_other_tab_refreshing')
+  if (isRefreshingSign === '1' || isRefreshing) {
+    await waitUntilTokenRefreshed()  // 轮询 localStorage 等待完成
+    return
+  }
+
+  isRefreshing = true
+  localStorage.setItem('is_other_tab_refreshing', '1')
+  localStorage.setItem('last_refresh_time', Date.now().toString())
+
+  const [error, ret] = await fetchWithRetry(
+    fetch(`${API_PREFIX}/refresh-token`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+  )
+
+  if (error || ret.status === 401) return Promise.reject(error || ret)
+}
+```
+
+### 6.2 超时竞速
+
+```typescript
+export async function refreshAccessTokenOrRelogin(timeout: number) {
+  return Promise.race([
+    new Promise<void>((_, reject) => setTimeout(() => {
+      releaseRefreshLock()
+      reject(new Error('request timeout'))
+    }, timeout)),
+    getNewAccessToken(timeout),
+  ])
+}
+```
+
+---
+
+## 7. 401 响应处理 — `service/base.ts`
+
+<CodeGroup>
+
+```typescript 普通请求
+if (errResp.status === 401) {
+  const [refreshErr] = await asyncRunSafe(refreshAccessTokenOrRelogin(TIME_OUT))
+  if (refreshErr === null)
+    return baseFetch<T>(url, options, otherOptions)  // 刷新成功，重试
+
+  if (location.pathname !== `${basePath}/signin`)
+    jumpTo(loginUrl)  // 刷新失败，跳转登录
+}
+```
+
+```typescript SSE 流式请求
+if (res.status === 401 && !isPublicAPI) {
+  refreshAccessTokenOrRelogin(TIME_OUT)
+    .then(() => ssePost(url, fetchOptions, otherOptions))  // 重试 SSE
+    .catch(console.error)
+}
+```
+
+</CodeGroup>
+
+---
+
+## 8. 登录重定向恢复
+
+### 8.1 保存原页面路径（`fetch.ts`）
+
+```typescript
+// Keycloak token 401 时
+const currentUrl = location.pathname + location.search
+localStorage.setItem('oauth_authorize_pending', JSON.stringify({ value: currentUrl }))
+```
+
+### 8.2 恢复原页面（`AppInitializer`）
+
+`AppInitializer` 包裹所有主要页面，SSO 完成后用户到达 `/apps` 时触发：
+
+```typescript
+// app/components/app-initializer.tsx
+useEffect(() => {
+  (async () => {
+    const isFinished = await isSetupFinished()
+    if (!isFinished) { router.replace('/install'); return }
+
+    const redirectUrl = resolvePostLoginRedirect(searchParams)
+    if (redirectUrl) {
+      location.replace(redirectUrl)  // 回到原页面
+      return
+    }
+    setInit(true)
+  })()
+}, [pathname, searchParams])
+```
+
+### 8.3 完整链路
+
+```
+用户在 /apps/abc123/workflow
+    ↓  Keycloak token 过期
+fetchKeycloakAccessToken → 401
+    ├─ localStorage['oauth_authorize_pending'] = { value: '/apps/abc123/workflow' }
+    ├─ has_sso_session cookie 清除
+    └─ location.href = '/signin'
+    ↓
+normal-form.tsx: isLoggedIn && hasSession=false → 展示 SSO 按钮
+    ↓
+用户 SSO 登录 → Keycloak → /api/auth/sso → cookies → redirect /apps
+    ↓
+AppInitializer → resolvePostLoginRedirect
+    → getItemWithExpiry('oauth_authorize_pending')
+    → location.replace('/apps/abc123/workflow') ✅
+```
+
+---
+
+## 相关文件汇总
+
+| 文件 | 作用 |
+|---|---|
+| `web/service/fetch.ts` | `fetchKeycloakAccessToken`（缓存 + 401 保存路径跳转）、`beforeRequestAuthorization` |
+| `web/service/refresh-token.ts` | token 刷新，含跨标签页防重复机制 |
+| `web/service/base.ts` | 401 响应处理，调用刷新或跳转登录 |
+| `web/service/sso.ts` | 构造 Keycloak 授权 URL |
+| `web/app/api/auth/sso/route.ts` | OAuth2 回调，code 换 session_id，写入 cookie |
+| `web/app/signin/normal-form.tsx` | 登录页检测已有 session 直接跳转 |
+| `web/app/signin/components/sso-auth.tsx` | SSO 按钮，触发跳转 Keycloak |
+| `web/app/components/app-initializer.tsx` | 登录后重定向恢复 |
+| `web/app/signin/utils/post-login-redirect.ts` | 解析登录成功后跳转目标 |
+
+</PrivateGate>

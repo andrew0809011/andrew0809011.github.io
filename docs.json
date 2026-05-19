@@ -60,6 +60,14 @@
               "blog/memory-system",
               "blog/mcp-configuration"
             ]
+          },
+          {
+            "group": "Dify",
+            "icon": "lock",
+            "expanded": false,
+            "pages": [
+              "blog/keycloak-sso-auth-flow"
+            ]
           }
         ]
       }
