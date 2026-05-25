@@ -4,7 +4,7 @@
 
 `ReactBackendHost` 实现了一个基于 JSON-lines 协议的异步消息循环，连接前端 React 应用和后端 OpenHarness 运行时。消息循环通过 stdin/stdout 通信，处理用户输入、执行查询、流式发送事件。
 
-**核心文件**: [src/openharness/ui/backend_host.py](src/openharness/ui/backend_host.py)
+**核心文件**: `src/openharness/ui/backend_host.py`
 
 ---
 
@@ -31,7 +31,7 @@
 ## 核心组件
 
 ### 1. **主消息循环** (`run()` 方法)
-**位置**: [backend_host.py#L84-L150](src/openharness/ui/backend_host.py#L84-L150)
+**位置**: backend_host.py#L84-L150 (`src/openharness/ui/backend_host.py#L84-L150`)
 
 ```python
 async def run(self) -> int:
@@ -200,7 +200,7 @@ raw = await asyncio.to_thread(sys.stdin.buffer.readline)  # ← to_thread
 它们恰好同时出现，是因为这个场景同时需要"并发"和"阻塞 IO 兼容"两个特性。
 
 ### 2. **请求读取任务** (`_read_requests()` 方法)
-**位置**: [backend_host.py#L152-L175](src/openharness/ui/backend_host.py#L152-L175)
+**位置**: backend_host.py#L152-L175 (`src/openharness/ui/backend_host.py#L152-L175`)
 
 ```python
 async def _read_requests(self) -> None:
@@ -238,7 +238,7 @@ async def _read_requests(self) -> None:
 - **Future 机制**: 权限/问题响应通过 Future 与阻塞的请求匹配
 
 ### 3. **请求处理** (主循环中的分支逻辑)
-**位置**: [backend_host.py#L102-L144](src/openharness/ui/backend_host.py#L102-L144)
+**位置**: backend_host.py#L102-L144 (`src/openharness/ui/backend_host.py#L102-L144`)
 
 ```python
 while self._running:
@@ -284,7 +284,7 @@ while self._running:
 ## 核心流程：提交行处理
 
 ### `_process_line()` 方法
-**位置**: [backend_host.py#L177-L210](src/openharness/ui/backend_host.py#L177-L210)
+**位置**: backend_host.py#L177-L210 (`src/openharness/ui/backend_host.py#L177-L210`)
 
 这是消息循环的**核心执行路径**，处理用户输入：
 
@@ -343,7 +343,7 @@ async def _process_line(self, line: str, *, transcript_line: str | None = None) 
 ```
 
 ### `handle_line()` 函数 (来自 runtime.py)
-**位置**: [src/openharness/ui/runtime.py#L481-550](src/openharness/ui/runtime.py#L481-550)
+**位置**: `src/openharness/ui/runtime.py#L481-550`
 
 ```python
 async def handle_line(
@@ -396,7 +396,7 @@ async def handle_line(
 ## 事件流详解
 
 ### 流事件处理 (`_render_event()`)
-**位置**: [backend_host.py#L199-L264](src/openharness/ui/backend_host.py#L199-L264)
+**位置**: backend_host.py#L199-L264 (`src/openharness/ui/backend_host.py#L199-L264`)
 
 事件类型及其处理：
 
@@ -439,7 +439,7 @@ await self._emit(BackendEvent.tasks_snapshot(...))
 ## 事件发送机制
 
 ### `_emit()` 方法
-**位置**: [backend_host.py#L787-L798](src/openharness/ui/backend_host.py#L787-L798)
+**位置**: backend_host.py#L787-L798 (`src/openharness/ui/backend_host.py#L787-L798`)
 
 ```python
 async def _emit(self, event: BackendEvent) -> None:
@@ -472,7 +472,7 @@ OHJSON:{"type":"assistant_delta","message":" there"}\n
 ## 权限和问题处理
 
 ### 异步权限请求
-**位置**: [backend_host.py#L756-L775](src/openharness/ui/backend_host.py#L756-L775)
+**位置**: backend_host.py#L756-L775 (`src/openharness/ui/backend_host.py#L756-L775`)
 
 ```python
 async def _ask_permission(self, tool_name: str, reason: str) -> bool:
@@ -529,7 +529,7 @@ async def _ask_permission(self, tool_name: str, reason: str) -> bool:
 ## 数据结构
 
 ### 前端请求 (`FrontendRequest`)
-**位置**: [src/openharness/ui/protocol.py](src/openharness/ui/protocol.py)
+**位置**: `src/openharness/ui/protocol.py`
 
 ```python
 @dataclass
@@ -631,11 +631,11 @@ class BackendEvent:
 
 | 层级 | 位置 | 功能 |
 |-----|------|------|
-| **主循环** | [backend_host.py#L84-L150](src/openharness/ui/backend_host.py#L84-L150) | `run()` - 初始化和消息分发 |
-| **请求读取** | [backend_host.py#L152-L175](src/openharness/ui/backend_host.py#L152-L175) | `_read_requests()` - stdin 解析 |
-| **请求分发** | [backend_host.py#L102-L144](src/openharness/ui/backend_host.py#L102-L144) | 主循环中的类型检查和分发 |
-| **行处理** | [backend_host.py#L177-L210](src/openharness/ui/backend_host.py#L177-L210) | `_process_line()` - 执行核心逻辑 |
-| **运行时处理** | [runtime.py#L481-550](src/openharness/ui/runtime.py#L481-550) | `handle_line()` - 命令/消息分发 |
-| **事件处理** | [backend_host.py#L199-L264](src/openharness/ui/backend_host.py#L199-L264) | `_render_event()` - 事件转换 |
-| **事件发送** | [backend_host.py#L787-L798](src/openharness/ui/backend_host.py#L787-L798) | `_emit()` - stdout 输出 |
-| **权限处理** | [backend_host.py#L756-L775](src/openharness/ui/backend_host.py#L756-L775) | `_ask_permission()` - 模态框 |
+| **主循环** | backend_host.py#L84-L150 (`src/openharness/ui/backend_host.py#L84-L150`) | `run()` - 初始化和消息分发 |
+| **请求读取** | backend_host.py#L152-L175 (`src/openharness/ui/backend_host.py#L152-L175`) | `_read_requests()` - stdin 解析 |
+| **请求分发** | backend_host.py#L102-L144 (`src/openharness/ui/backend_host.py#L102-L144`) | 主循环中的类型检查和分发 |
+| **行处理** | backend_host.py#L177-L210 (`src/openharness/ui/backend_host.py#L177-L210`) | `_process_line()` - 执行核心逻辑 |
+| **运行时处理** | runtime.py#L481-550 (`src/openharness/ui/runtime.py#L481-550`) | `handle_line()` - 命令/消息分发 |
+| **事件处理** | backend_host.py#L199-L264 (`src/openharness/ui/backend_host.py#L199-L264`) | `_render_event()` - 事件转换 |
+| **事件发送** | backend_host.py#L787-L798 (`src/openharness/ui/backend_host.py#L787-L798`) | `_emit()` - stdout 输出 |
+| **权限处理** | backend_host.py#L756-L775 (`src/openharness/ui/backend_host.py#L756-L775`) | `_ask_permission()` - 模态框 |

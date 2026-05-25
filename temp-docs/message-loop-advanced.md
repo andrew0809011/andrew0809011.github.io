@@ -6,7 +6,7 @@
 
 ### 架构：Future-based 请求池
 
-**位置**: [backend_host.py#L69-79](src/openharness/ui/backend_host.py#L69-L79)
+**位置**: backend_host.py#L69-79 (`src/openharness/ui/backend_host.py#L69-L79`)
 
 ```python
 class ReactBackendHost:
@@ -22,7 +22,7 @@ class ReactBackendHost:
 ### 权限请求流程
 
 #### 1. 后端发起请求 (`_ask_permission()`)
-**位置**: [backend_host.py#L756-L775](src/openharness/ui/backend_host.py#L756-L775)
+**位置**: backend_host.py#L756-L775 (`src/openharness/ui/backend_host.py#L756-L775`)
 
 ```python
 async def _ask_permission(self, tool_name: str, reason: str) -> bool:
@@ -61,7 +61,7 @@ async def _ask_permission(self, tool_name: str, reason: str) -> bool:
 ```
 
 #### 2. 前端响应 → 后端处理
-**位置**: [backend_host.py#L152-L175](src/openharness/ui/backend_host.py#L152-L175)
+**位置**: backend_host.py#L152-L175 (`src/openharness/ui/backend_host.py#L152-L175`)
 
 ```python
 async def _read_requests(self) -> None:
@@ -162,7 +162,7 @@ run_query(context, messages)
 ```
 
 ### `_execute_tool_call()` 详解
-**位置**: [query.py#L625-L700](src/openharness/engine/query.py#L625-L700)
+**位置**: query.py#L625-L700 (`src/openharness/engine/query.py#L625-L700`)
 
 ```python
 async def _execute_tool_call(
@@ -255,7 +255,7 @@ async def _execute_tool_call(
 ```
 
 ### 并发工具执行
-**位置**: [query.py#L550-570](src/openharness/engine/query.py#L550-L570)
+**位置**: query.py#L550-570 (`src/openharness/engine/query.py#L550-L570`)
 
 ```python
 async def run_query(...):
@@ -315,7 +315,7 @@ async def run_query(...):
 ```
 
 ### 权限检查决策树
-**位置**: [permissions/checker.py#L84-L156](src/openharness/permissions/checker.py#L84-L156)
+**位置**: permissions/checker.py#L84-L156 (`src/openharness/permissions/checker.py#L84-L156`)
 
 ```
 PermissionChecker.evaluate(tool_name, is_read_only, file_path, command)
@@ -376,7 +376,7 @@ OHJSON:{...json event...}\n
 
 ### React 前端集成点
 
-**文件**: [autopilot-dashboard/src/App.tsx](autopilot-dashboard/src/App.tsx)
+**文件**: `autopilot-dashboard/src/App.tsx`
 
 前端需要：
 1. 连接 WebSocket 或打开子进程 stdin/stdout

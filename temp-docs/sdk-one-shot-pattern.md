@@ -65,7 +65,7 @@ asyncio.run(run_print_mode(
 
 ## 推荐用法：带回调的中层 SDK
 
-参见示例文件：[examples/sdk_one_shot.py](../examples/sdk_one_shot.py)
+参见示例文件：`examples/sdk_one_shot.py`
 
 ```python
 import asyncio
@@ -186,9 +186,9 @@ python -m openharness --print "..." --output-format stream-json
 
 | 文件 | 说明 |
 |------|------|
-| [src/openharness/ui/app.py](../src/openharness/ui/app.py) | `run_print_mode()` 高层入口 |
-| [src/openharness/ui/runtime.py](../src/openharness/ui/runtime.py) | `build_runtime()` 中层入口 |
-| [src/openharness/permissions/modes.py](../src/openharness/permissions/modes.py) | `PermissionMode` 枚举 |
-| [src/openharness/permissions/checker.py](../src/openharness/permissions/checker.py) | 权限评估逻辑，敏感路径保护 |
-| [src/openharness/engine/stream_events.py](../src/openharness/engine/stream_events.py) | 所有事件类型定义 |
-| [examples/sdk_one_shot.py](../examples/sdk_one_shot.py) | 完整可运行示例 |
+| `src/openharness/ui/app.py` | `run_print_mode()` 高层入口 |
+| `src/openharness/ui/runtime.py` | `build_runtime()` 中层入口 |
+| `src/openharness/permissions/modes.py` | `PermissionMode` 枚举 |
+| `src/openharness/permissions/checker.py` | 权限评估逻辑，敏感路径保护 |
+| `src/openharness/engine/stream_events.py` | 所有事件类型定义 |
+| `examples/sdk_one_shot.py` | 完整可运行示例 |

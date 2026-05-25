@@ -15,7 +15,7 @@ OpenHarness 前端和后端支持多种斜杠命令 `/command`，这些命令用
 - 前端识别 `/plan` 命令
 - 自动发送 `/plan on` 或 `/plan off` 作为 submit_line 请求
 
-**代码位置**: [frontend/terminal/src/App.tsx#L158-L168](../frontend/terminal/src/App.tsx#L158-L168)
+**代码位置**: `frontend/terminal/src/App.tsx#L158-L168`
 
 ```typescript
 if (trimmed === '/plan') {
@@ -43,7 +43,7 @@ session.sendRequest({type: 'select_command', command: 'resume'});
 - 前端显示下拉菜单
 - 用户选择后发送 `/resume <session_id>`
 
-**后端处理**: [backend_host.py#L335](../src/openharness/ui/backend_host.py#L335)
+**后端处理**: backend_host.py#L335 (`src/openharness/ui/backend_host.py#L335`)
 ```python
 if command == "resume":
     return f"/resume {value}" if value else "/resume"
@@ -264,7 +264,7 @@ if command == "permissions":
 
 ## 前端命令检测
 
-位置: [frontend/terminal/src/App.tsx#L135-L180](../frontend/terminal/src/App.tsx#L135-L180)
+位置: `frontend/terminal/src/App.tsx#L135-L180`
 
 ```typescript
 const handleCommand = (value: string): boolean => {
@@ -296,6 +296,6 @@ const handleCommand = (value: string): boolean => {
 
 ## 相关文件
 
-- [backend_host.py#L335-L360](../src/openharness/ui/backend_host.py#L335-L360) - 命令行转换
-- [App.tsx#L135-L180](../frontend/terminal/src/App.tsx#L135-L180) - 前端命令处理
-- [runtime.py#L487](../src/openharness/ui/runtime.py#L487) - 后端命令分发
+- backend_host.py#L335-L360 (`src/openharness/ui/backend_host.py#L335-L360`) - 命令行转换
+- App.tsx#L135-L180 (`frontend/terminal/src/App.tsx#L135-L180`) - 前端命令处理
+- runtime.py#L487 (`src/openharness/ui/runtime.py#L487`) - 后端命令分发

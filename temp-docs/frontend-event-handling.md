@@ -8,7 +8,7 @@
 
 ## 事件处理入口
 
-**文件**: [frontend/terminal/src/hooks/useBackendSession.ts#L179-L437](../frontend/terminal/src/hooks/useBackendSession.ts#L179-L437)
+**文件**: `frontend/terminal/src/hooks/useBackendSession.ts#L179-L437`
 
 **关键函数**: `handleEvent(event: BackendEvent)`
 
@@ -526,5 +526,5 @@ const lastStatusSnapshotRef                    // 上次状态快照（对比用
 
 ## 相关文件
 
-- [useBackendSession.ts](../frontend/terminal/src/hooks/useBackendSession.ts) - 事件处理 Hook
-- [protocol.py](../src/openharness/ui/protocol.py) - 事件数据模型
+- useBackendSession.ts (`frontend/terminal/src/hooks/useBackendSession.ts`) - 事件处理 Hook
+- protocol.py (`src/openharness/ui/protocol.py`) - 事件数据模型

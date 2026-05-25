@@ -229,11 +229,11 @@ build_runtime_system_prompt(settings, cwd, latest_user_prompt)
 
 | 功能 | 文件 |
 |------|------|
-| system_prompt 总组装 | [src/openharness/prompts/context.py](../src/openharness/prompts/context.py) |
-| 基础人设 + 环境 | [src/openharness/prompts/system_prompt.py](../src/openharness/prompts/system_prompt.py) |
-| 环境信息采集 | [src/openharness/prompts/environment.py](../src/openharness/prompts/environment.py) |
-| Memory 注入 | [src/openharness/memory/](../src/openharness/memory/) |
-| Skills 枚举 | [src/openharness/skills/loader.py](../src/openharness/skills/loader.py) |
+| system_prompt 总组装 | `src/openharness/prompts/context.py` |
+| 基础人设 + 环境 | `src/openharness/prompts/system_prompt.py` |
+| 环境信息采集 | `src/openharness/prompts/environment.py` |
+| Memory 注入 | `src/openharness/memory/` |
+| Skills 枚举 | `src/openharness/skills/loader.py` |
 
 ---
 
@@ -466,7 +466,7 @@ _execute_tool_call(context, tool_name, tool_use_id, tool_input)
 
 ### ToolRegistry 结构
 
-定义在 [src/openharness/tools/base.py](../src/openharness/tools/base.py)，是一个简单的 `dict` 包装器：
+定义在 `src/openharness/tools/base.py`，是一个简单的 `dict` 包装器：
 
 ```python
 class ToolRegistry:
@@ -544,10 +544,10 @@ build_runtime()                          ← ui/runtime.py
 
 | 功能 | 文件 |
 |------|------|
-| RuntimeBundle 组装 | [src/openharness/ui/runtime.py](../src/openharness/ui/runtime.py) |
-| QueryEngine 定义 | [src/openharness/engine/query_engine.py](../src/openharness/engine/query_engine.py) |
-| run_query 循环 | [src/openharness/engine/query.py](../src/openharness/engine/query.py) |
-| handle_line 桥梁 | [src/openharness/ui/runtime.py](../src/openharness/ui/runtime.py)（函数 `handle_line`） |
-| ToolRegistry / BaseTool | [src/openharness/tools/base.py](../src/openharness/tools/base.py) |
-| 内置工具注册 | [src/openharness/tools/__init__.py](../src/openharness/tools/__init__.py) |
-| 各内置工具实现 | [src/openharness/tools/](../src/openharness/tools/)（各子文件） |
+| RuntimeBundle 组装 | `src/openharness/ui/runtime.py` |
+| QueryEngine 定义 | `src/openharness/engine/query_engine.py` |
+| run_query 循环 | `src/openharness/engine/query.py` |
+| handle_line 桥梁 | `src/openharness/ui/runtime.py`（函数 `handle_line`） |
+| ToolRegistry / BaseTool | `src/openharness/tools/base.py` |
+| 内置工具注册 | `src/openharness/tools/__init__.py` |
+| 各内置工具实现 | `src/openharness/tools/`（各子文件） |
