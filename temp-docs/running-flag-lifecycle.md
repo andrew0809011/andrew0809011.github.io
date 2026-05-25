@@ -8,7 +8,7 @@
 
 ## 初始化阶段
 
-**文件**: [backend_host.py#L72-L78](../src/openharness/ui/backend_host.py#L72-L78)
+**文件**: backend_host.py#L72-L78 (`src/openharness/ui/backend_host.py#L72-L78`)
 
 ```python
 class ReactBackendHost:
@@ -32,7 +32,7 @@ class ReactBackendHost:
 
 ## 主消息循环
 
-**文件**: [backend_host.py#L114-L160](../src/openharness/ui/backend_host.py#L114-L160)
+**文件**: backend_host.py#L114-L160 (`src/openharness/ui/backend_host.py#L114-L160`)
 
 ```python
 async def run(self) -> int:
@@ -137,7 +137,7 @@ async def run(self) -> int:
 
 ### 来源 1: handle_line()
 
-**文件**: [runtime.py#L487-L580](../src/openharness/ui/runtime.py#L487-L580)
+**文件**: runtime.py#L487-L580 (`src/openharness/ui/runtime.py#L487-L580`)
 
 ```python
 async def handle_line(
@@ -186,7 +186,7 @@ async def handle_line(
 
 ### 来源 2: _process_line()
 
-**文件**: [backend_host.py#L194-L290](../src/openharness/ui/backend_host.py#L194-L290)
+**文件**: backend_host.py#L194-L290 (`src/openharness/ui/backend_host.py#L194-L290`)
 
 ```python
 async def _process_line(self, line: str, *, transcript_line: str | None = None) -> bool:
@@ -212,7 +212,7 @@ async def _process_line(self, line: str, *, transcript_line: str | None = None) 
 
 ### 来源 3: _apply_select_command()
 
-**文件**: [backend_host.py#L323-L330](../src/openharness/ui/backend_host.py#L323-L330)
+**文件**: backend_host.py#L323-L330 (`src/openharness/ui/backend_host.py#L323-L330`)
 
 ```python
 async def _apply_select_command(self, command_name: str, value: str) -> bool:
@@ -305,7 +305,7 @@ while True:  # ← 实际上是无限循环
 
 ## 清理阶段
 
-**文件**: [backend_host.py#L161-L166](../src/openharness/ui/backend_host.py#L161-L166)
+**文件**: backend_host.py#L161-L166 (`src/openharness/ui/backend_host.py#L161-L166`)
 
 ```python
 finally:
@@ -374,6 +374,6 @@ T101: 用户关闭应用
 
 ## 相关文件
 
-- [backend_host.py](../src/openharness/ui/backend_host.py) - 主循环实现
-- [runtime.py](../src/openharness/ui/runtime.py) - handle_line 实现
-- [protocol.py](../src/openharness/ui/protocol.py) - 事件和请求类型
+- backend_host.py (`src/openharness/ui/backend_host.py`) - 主循环实现
+- runtime.py (`src/openharness/ui/runtime.py`) - handle_line 实现
+- protocol.py (`src/openharness/ui/protocol.py`) - 事件和请求类型

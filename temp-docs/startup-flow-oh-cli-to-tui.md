@@ -6,7 +6,7 @@
 
 ## 1. 入口点：oh CLI
 
-**文件**: [src/openharness/cli.py#L29-L40](src/openharness/cli.py)
+**文件**: `src/openharness/cli.py`
 
 ```python
 app = typer.Typer(
@@ -23,7 +23,7 @@ app = typer.Typer(
 
 ## 2. 主回调函数：main()
 
-**文件**: [src/openharness/cli.py#L1332-L1500](src/openharness/cli.py)
+**文件**: `src/openharness/cli.py`
 
 这是 `oh` 命令的**核心决策点**：
 
@@ -92,7 +92,7 @@ asyncio.run(run_repl(prompt=None, cwd=cwd, model=model, ...))
 
 ### 3.1 run_repl() 函数
 
-**文件**: [src/openharness/ui/app.py#L35-L73](src/openharness/ui/app.py)
+**文件**: `src/openharness/ui/app.py`
 
 ```python
 async def run_repl(
@@ -135,7 +135,7 @@ async def run_repl(
 
 ### 3.2 launch_react_tui() 函数 ⭐ (TUI 的真正启动者)
 
-**文件**: [src/openharness/ui/react_launcher.py#L118-L175](src/openharness/ui/react_launcher.py)
+**文件**: `src/openharness/ui/react_launcher.py`
 
 ```python
 async def launch_react_tui(
@@ -259,7 +259,7 @@ if backend_only:
 
 ### run_backend_host() 的工作
 
-**文件**: [src/openharness/ui/backend_host.py](src/openharness/ui/backend_host.py)
+**文件**: `src/openharness/ui/backend_host.py`
 
 ```python
 class ReactBackendHost:
@@ -488,7 +488,7 @@ app = typer.Typer(
 
 ### 1.2 ohmo 命令入口
 
-**文件**: [ohmo/cli.py#L35-L43](ohmo/cli.py)
+**文件**: `ohmo/cli.py`
 
 ```python
 app = typer.Typer(
@@ -510,7 +510,7 @@ app = typer.Typer(
 
 ### 2.1 入口：main() 回调函数
 
-**文件**: [src/openharness/cli.py#L1332-L1355](src/openharness/cli.py)
+**文件**: `src/openharness/cli.py`
 
 ```python
 @app.callback(invoke_without_command=True)
@@ -656,7 +656,7 @@ asyncio.run(
 
 ### 2.3 run_repl() 函数
 
-**文件**: [src/openharness/ui/app.py#L35-L73](src/openharness/ui/app.py)
+**文件**: `src/openharness/ui/app.py`
 
 这是 TUI 启动的**直接调用者**：
 
@@ -703,7 +703,7 @@ async def run_repl(
 
 ### 2.4 launch_react_tui() 函数
 
-**文件**: [src/openharness/ui/react_launcher.py#L118-L175](src/openharness/ui/react_launcher.py)
+**文件**: `src/openharness/ui/react_launcher.py`
 
 这就是 **`oh` 命令启动 TUI 的核心**：
 
@@ -821,7 +821,7 @@ return await process.wait()
 
 ### ohmo 的启动不同之处
 
-**文件**: [ohmo/runtime.py#L52-L97](ohmo/runtime.py)
+**文件**: `ohmo/runtime.py`
 
 ```python
 async def launch_ohmo_react_tui(...) -> int:
@@ -934,7 +934,7 @@ raise SystemExit(
 
 ### 3.1 launch_ohmo_react_tui()
 
-**文件**: [ohmo/runtime.py#L52-L97](ohmo/runtime.py)
+**文件**: `ohmo/runtime.py`
 
 这是启动 React TUI 的主函数：
 
@@ -1057,7 +1057,7 @@ return await process.wait()
 
 ### 5.1 run_ohmo_backend()
 
-**文件**: [ohmo/runtime.py#L24-L45](ohmo/runtime.py)
+**文件**: `ohmo/runtime.py`
 
 当前端启动后端子进程时：
 
@@ -1104,11 +1104,11 @@ return await run_backend_host(
 )
 ```
 
-- 调用 [src/openharness/ui/backend_host.py](src/openharness/ui/backend_host.py) 中的 `run_backend_host()`
+- 调用 `src/openharness/ui/backend_host.py` 中的 `run_backend_host()`
 
 ### 5.2 ReactBackendHost
 
-**文件**: [src/openharness/ui/backend_host.py#L49-200](src/openharness/ui/backend_host.py)
+**文件**: `src/openharness/ui/backend_host.py`
 
 ```python
 class ReactBackendHost:
@@ -1229,14 +1229,14 @@ class ReactBackendHost:
 
 ### 7.2 关键类
 
-**前端请求**: [src/openharness/ui/protocol.py](src/openharness/ui/protocol.py)
+**前端请求**: `src/openharness/ui/protocol.py`
 ```python
 class FrontendRequest(BaseModel):
     type: str  # "user_message", "permission_response", "question_response"
     ...
 ```
 
-**后端事件**: [src/openharness/engine/stream_events.py](src/openharness/engine/stream_events.py)
+**后端事件**: `src/openharness/engine/stream_events.py`
 ```python
 class StreamEvent(BaseModel):
     type: str

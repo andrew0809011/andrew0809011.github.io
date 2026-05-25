@@ -9,7 +9,7 @@
 ## 请求来源
 
 ### 1. 👤 用户输入主消息（最常见）
-**文件**: [frontend/terminal/src/App.tsx#L367](../frontend/terminal/src/App.tsx#L367)
+**文件**: `frontend/terminal/src/App.tsx#L367`
 
 **触发时机**: 用户在终端输入任何命令或消息并按 Enter
 
@@ -35,7 +35,7 @@ const handleSubmit = (value: string) => {
 ---
 
 ### 2. 🎛️ /plan 命令切换
-**文件**: [frontend/terminal/src/App.tsx#L161-L163](../frontend/terminal/src/App.tsx#L161-L163)
+**文件**: `frontend/terminal/src/App.tsx#L161-L163`
 
 **触发时机**: 用户执行 `/plan` 命令来切换 plan 模式
 
@@ -55,7 +55,7 @@ if (trimmed === '/plan') {
 ---
 
 ### 3. 🚀 会话初始化时
-**文件**: [frontend/terminal/src/hooks/useBackendSession.ts#L207](../frontend/terminal/src/hooks/useBackendSession.ts#L207)
+**文件**: `frontend/terminal/src/hooks/useBackendSession.ts#L207`
 
 **触发时机**: 会话建立后，自动发送初始提示词
 
@@ -72,7 +72,7 @@ if (config.initial_prompt && !sentInitialPrompt.current) {
 ## 后端处理流程
 
 ### 请求协议定义
-**文件**: [src/openharness/ui/protocol.py#L19-L32](../src/openharness/ui/protocol.py#L19-L32)
+**文件**: `src/openharness/ui/protocol.py#L19-L32`
 
 ```python
 class FrontendRequest(BaseModel):
@@ -89,7 +89,7 @@ class FrontendRequest(BaseModel):
 ```
 
 ### 消息循环处理
-**文件**: [src/openharness/ui/backend_host.py#L143-L157](../src/openharness/ui/backend_host.py#L143-L157)
+**文件**: `src/openharness/ui/backend_host.py#L143-L157`
 
 ```python
 if request.type != "submit_line":
@@ -163,7 +163,7 @@ should_continue = await self._process_line(line)  # ← 核心处理逻辑
 
 ## 相关文件
 
-- [backend_host.py](../src/openharness/ui/backend_host.py) - 消息循环核心实现
-- [protocol.py](../src/openharness/ui/protocol.py) - 请求/事件协议定义
-- [App.tsx](../frontend/terminal/src/App.tsx) - 前端 React 应用
-- [useBackendSession.ts](../frontend/terminal/src/hooks/useBackendSession.ts) - React Hook，管理后端连接
+- backend_host.py (`src/openharness/ui/backend_host.py`) - 消息循环核心实现
+- protocol.py (`src/openharness/ui/protocol.py`) - 请求/事件协议定义
+- App.tsx (`frontend/terminal/src/App.tsx`) - 前端 React 应用
+- useBackendSession.ts (`frontend/terminal/src/hooks/useBackendSession.ts`) - React Hook，管理后端连接

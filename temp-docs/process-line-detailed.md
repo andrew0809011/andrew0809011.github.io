@@ -14,7 +14,7 @@
 ## 处理流程详解
 
 ### 位置
-[src/openharness/ui/backend_host.py#L194-L290](../src/openharness/ui/backend_host.py#L194-L290)
+`src/openharness/ui/backend_host.py#L194-L290`
 
 ### 完整代码流程
 
@@ -196,7 +196,7 @@ async def _process_line(self, line: str, *, transcript_line: str | None = None) 
 
 ## handle_line() - 命令分发
 
-`handle_line()` 是 `_process_line()` 调用的核心函数，位于 [runtime.py#L487](../src/openharness/ui/runtime.py#L487)
+`handle_line()` 是 `_process_line()` 调用的核心函数，位于 runtime.py#L487 (`src/openharness/ui/runtime.py#L487`)
 
 ```python
 async def handle_line(
@@ -347,6 +347,6 @@ if event.tool_name in ("set_permission_mode", "plan_mode"):
 
 ## 相关文件
 
-- [backend_host.py](../src/openharness/ui/backend_host.py) - 消息循环和 _process_line 实现
-- [runtime.py](../src/openharness/ui/runtime.py) - handle_line 实现和命令分发
-- [protocol.py](../src/openharness/ui/protocol.py) - 事件和请求数据模型
+- backend_host.py (`src/openharness/ui/backend_host.py`) - 消息循环和 _process_line 实现
+- runtime.py (`src/openharness/ui/runtime.py`) - handle_line 实现和命令分发
+- protocol.py (`src/openharness/ui/protocol.py`) - 事件和请求数据模型

@@ -602,7 +602,7 @@ export OPENHARNESS_MAX_TURNS=100
 
 ### 1. 项目级定制工作流程
 
-```bash
+````bash
 # 1. 在项目根目录创建 CLAUDE.md
 echo "# My Project Guidelines" > CLAUDE.md
 
@@ -641,7 +641,7 @@ model: sonnet
 - 敏感信息泄露
 - 权限绕过
 EOF
-```
+````
 
 ### 2. 技能设计原则
 

@@ -277,7 +277,7 @@ class OpenAICompatibleClient:          # ← 没有继承任何东西
 | `OpenAICompatibleClient` | ❌ 无 | ✅ 是 | 实现了 `stream_message(request: ApiMessageRequest)` |
 | Mock/测试对象 | ❌ 无 | ✅ 是 | 只要实现同名方法即满足 |
 
-**`QueryContext` 中的声明**（[src/openharness/engine/query.py](../src/openharness/engine/query.py)）：
+**`QueryContext` 中的声明**（`src/openharness/engine/query.py`）：
 
 ```python
 @dataclass

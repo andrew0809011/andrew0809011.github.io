@@ -51,7 +51,7 @@
 
 ### 第一步：入口 - submit_message
 
-**文件**: [src/openharness/engine/query_engine.py#L147-L190](../src/openharness/engine/query_engine.py#L147-L190)
+**文件**: `src/openharness/engine/query_engine.py#L147-L190`
 
 ```python
 async def submit_message(self, prompt: str | ConversationMessage) -> AsyncIterator[StreamEvent]:
@@ -99,7 +99,7 @@ async def submit_message(self, prompt: str | ConversationMessage) -> AsyncIterat
 
 ### 第二步：核心循环 - run_query
 
-**文件**: [src/openharness/engine/query.py#L455-L660](../src/openharness/engine/query.py#L455-L660)
+**文件**: `src/openharness/engine/query.py#L455-L660`
 
 ```python
 async def run_query(
@@ -272,7 +272,7 @@ except Exception as exc:
 
 ## 完整事件类型定义
 
-**文件**: [src/openharness/engine/stream_events.py](../src/openharness/engine/stream_events.py)
+**文件**: `src/openharness/engine/stream_events.py`
 
 ```python
 StreamEvent = (

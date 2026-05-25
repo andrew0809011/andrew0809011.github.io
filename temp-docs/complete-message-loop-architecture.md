@@ -52,7 +52,7 @@
 
 ### 第一步：前端发送请求
 
-**文件**: [frontend/terminal/src/App.tsx#L367](../frontend/terminal/src/App.tsx#L367)
+**文件**: `frontend/terminal/src/App.tsx#L367`
 
 ```typescript
 // 用户按 Enter
@@ -86,7 +86,7 @@ const handleSubmit = (value: string) => {
 
 ### 第二步：后端读取请求
 
-**文件**: [backend_host.py#L152-L175](../src/openharness/ui/backend_host.py#L152-L175)
+**文件**: backend_host.py#L152-L175 (`src/openharness/ui/backend_host.py#L152-L175`)
 
 ```python
 async def _read_requests(self) -> None:
@@ -123,7 +123,7 @@ async def _read_requests(self) -> None:
 
 ### 第三步：主消息循环处理
 
-**文件**: [backend_host.py#L102-L157](../src/openharness/ui/backend_host.py#L102-L157)
+**文件**: backend_host.py#L102-L157 (`src/openharness/ui/backend_host.py#L102-L157`)
 
 ```python
 async def run(self) -> int:
@@ -167,7 +167,7 @@ async def run(self) -> int:
 
 ### 第四步：处理行 (_process_line)
 
-**文件**: [backend_host.py#L194-L290](../src/openharness/ui/backend_host.py#L194-L290)
+**文件**: backend_host.py#L194-L290 (`src/openharness/ui/backend_host.py#L194-L290`)
 
 ```python
 async def _process_line(self, line: str) -> bool:
@@ -213,7 +213,7 @@ async def _process_line(self, line: str) -> bool:
 
 ### 第五步：handle_line - 命令分发
 
-**文件**: [runtime.py#L487-L550](../src/openharness/ui/runtime.py#L487-L550)
+**文件**: runtime.py#L487-L550 (`src/openharness/ui/runtime.py#L487-L550`)
 
 ```python
 async def handle_line(bundle, line, ...) -> bool:
@@ -299,7 +299,7 @@ async def _render_event(event: StreamEvent) -> None:
 
 ### 第七步：后端发送事件
 
-**文件**: [backend_host.py#L167-L185](../src/openharness/ui/backend_host.py#L167-L185)
+**文件**: backend_host.py#L167-L185 (`src/openharness/ui/backend_host.py#L167-L185`)
 
 ```python
 async def _emit(self, event: BackendEvent) -> None:
@@ -328,7 +328,7 @@ async def _emit(self, event: BackendEvent) -> None:
 
 ### 第八步：前端接收事件
 
-**文件**: [useBackendSession.ts#L145-L175](../frontend/terminal/src/hooks/useBackendSession.ts#L145-L175)
+**文件**: useBackendSession.ts#L145-L175 (`frontend/terminal/src/hooks/useBackendSession.ts#L145-L175`)
 
 ```typescript
 // 在 useEffect 中设置事件监听
@@ -351,7 +351,7 @@ useEffect(() => {
 
 ### 第九步：前端事件处理
 
-**文件**: [useBackendSession.ts#L179-L437](../frontend/terminal/src/hooks/useBackendSession.ts#L179-L437)
+**文件**: useBackendSession.ts#L179-L437 (`frontend/terminal/src/hooks/useBackendSession.ts#L179-L437`)
 
 ```typescript
 const handleEvent = (event: BackendEvent): void => {
