@@ -1,0 +1,354 @@
+---
+title: "Agent Loop 架构与事件流"
+description: "深度解析 opencode SessionPrompt 中的主循环及全链路事件流，涵盖 LLM 流处理、工具并发模型、子 Agent 递归调用、错误重试与上下文压缩机制。"
+---
+
+> 深度解析 `packages/opencode/src/session/prompt.ts` 中的主循环及全链路事件流
+
+---
+
+## 入口：从 HTTP 请求到 Agent Loop
+
+```
+POST /session/:id/prompt  (promptAsync)
+        │
+        ▼
+SessionPrompt.Service.prompt()
+        │  构建 UserMessage + Parts，写入 DB
+        │  发布 message.updated 事件
+        ▼
+SessionPrompt.Service.loop()
+        │
+        ▼
+SessionRunState.ensureRunning()     ← 确保同 sessionID 不并发
+        │
+        ▼
+SessionPrompt.runLoop()             ← ★ 主循环
+```
+
+<Callout type="info">
+  `promptAsync` 将 `loop()` 通过 `Effect.forkIn(scope)` 分叉到后台 fiber，HTTP 立即返回 204，循环异步执行。
+</Callout>
+
+---
+
+## 主循环 runLoop（核心 while(true) 逻辑）
+
+**`packages/opencode/src/session/prompt.ts:1244`**
+
+```
+while (true):
+  ├─ 获取当前消息历史（filterCompacted）
+  │
+  ├─ 检查退出条件
+  │    └─ lastAssistant.finish ∉ ["tool-calls"] && lastUser < lastAssistant
+  │           → break（LLM 已完成，没有未执行的工具）
+  │
+  ├─ step++
+  │
+  ├─ 处理 task（subtask / compaction）
+  │    ├─ subtask → handleSubtask() → 递归调用子 Agent
+  │    └─ compaction → 压缩上下文后 continue
+  │
+  ├─ 溢出检查 → 自动创建压缩任务 continue
+  │
+  ├─ 解析当前 Agent（lastUser.agent → Agent.get()）
+  │
+  ├─ 创建新 AssistantMessage（写入 DB）
+  │
+  ├─ SessionProcessor.create() → 创建流处理 Handle
+  │
+  ├─ SessionTools.resolve() → 将 Tool.Def[] 绑定为 AI SDK 工具
+  │
+  ├─ 构建 SystemPrompt（env + instructions + skills）
+  │
+  ├─ handle.process() → 调用 LLM，流式处理
+  │    └─ 返回 "continue" | "stop" | "compact"
+  │
+  └─ 根据结果：continue / break / 创建压缩任务
+```
+
+**关键退出条件**（三种方式）：
+
+| 退出方式 | 触发条件 |
+|----------|---------|
+| `finish ∉ ["tool-calls"]` | LLM 正常结束，无待执行工具 |
+| `result === "stop"` | 被中断（permission reject / question reject / 用户取消） |
+| `result === "compact"` | 触发上下文压缩，添加压缩任务后继续 |
+
+---
+
+## LLM 流处理（SessionProcessor）
+
+`handle.process()` 内部执行 `llm.stream()` 并通过 `Stream.tap(handleEvent)` 处理每个流事件：
+
+### 流事件类型与处理
+
+```
+LLM 返回 AsyncIterable<LLMEvent>
+        │
+        ▼ Stream.tap(handleEvent)
+
+handleEvent switch(type):
+  ├─ "step-start"         → 写 StepStartPart，快照初始化
+  ├─ "text-start"         → 创建 TextPart
+  ├─ "text-delta"         → 累加 TextPart.text，updatePartDelta（SSE 推送 delta）
+  ├─ "text-end"           → 完成 TextPart，写 DB
+  ├─ "reasoning-start"    → 创建 ReasoningPart（思维链）
+  ├─ "reasoning-delta"    → 累加推理文本，发 delta 事件
+  ├─ "reasoning-end"      → 完成 ReasoningPart
+  ├─ "tool-input-start"   → 创建 ToolPart(pending)，写 DB
+  ├─ "tool-call"          → ToolPart → running，更新参数
+  │                          → DOOM LOOP 检测（同工具同参数连续 3 次 → 触发 permission.ask）
+  ├─ "tool-result"        → completeToolCall()：ToolPart → completed
+  ├─ "tool-error"         → failToolCall()：ToolPart → error
+  ├─ "step-finish"        → 记录 token usage，cost；检查是否需要压缩
+  └─ "provider-error"     → 抛出错误，触发 retry 逻辑
+```
+
+### ToolPart 状态机
+
+```
+              tool-input-start
+                    │
+                    ▼
+              ┌──────────┐
+              │ pending  │
+              └──────────┘
+                    │ tool-call（参数填充完毕）
+                    ▼
+              ┌──────────┐
+              │ running  │ ←── metadata() 可更新 title/状态
+              └──────────┘
+               │         │
+     tool-result         tool-error
+               │         │
+               ▼         ▼
+         completed      error
+```
+
+---
+
+## 工具执行并发模型
+
+Vercel AI SDK 可能**并发调用多个工具**。`processor.ts` 中每个工具调用都有独立的 `Deferred<void>`：
+
+```typescript
+ctx.toolcalls[toolCallID] = {
+  done: yield* Deferred.make<void>(),  // 工具完成信号
+  partID, messageID, sessionID,
+  inputEnded: false,
+}
+```
+
+在 `cleanup()` 中等待所有未完成工具：
+
+```typescript
+yield* Effect.forEach(
+  Object.values(ctx.toolcalls),
+  (call) => Deferred.await(call.done).pipe(Effect.timeout("250 millis"), Effect.ignore),
+  { concurrency: "unbounded" }
+)
+```
+
+---
+
+## 子 Agent（Task 工具）的递归调用
+
+**`packages/opencode/src/tool/task.ts`** + **`handleSubtask()`**
+
+当 LLM 调用 `task` 工具（子 Agent），执行路径：
+
+```
+LLM → task 工具执行
+        │
+        ▼
+handleSubtask()
+  ├─ 解析目标 Agent（task.agent）
+  ├─ 创建新 AssistantMessage（作为子 task 容器）
+  ├─ 创建 ToolPart(running) 显示进度
+  ├─ 调用 taskTool.execute()
+  │     └─ 内部调用 promptOps.prompt() → 新的 prompt() 调用
+  │           └─ 进入同一个 runLoop，但 sessionID 相同
+  └─ 完成后更新 ToolPart(completed)
+```
+
+<Callout type="warning">
+  **关键**：子 Agent 共享同一个 `sessionID`，但使用不同的 `Agent.Info`（不同权限集）。子 Agent 的消息会以 `AssistantMessage.mode = subagent名称` 标记。
+</Callout>
+
+---
+
+## 全链路事件流
+
+### 后端事件生产（Bus → SSE）
+
+```
+SessionProcessor.handleEvent()
+    │
+    │ 每个流事件 → session.updatePart() 写 DB → 发布 Bus 事件
+    ▼
+Bus.Service (Effect PubSub)
+    │ wildcard subscription
+    ▼
+GET /event  (SSE)
+    │ 所有事件序列化为 JSON，通过 text/event-stream 推送
+    ▼
+前端 EventSource
+```
+
+### 事件类型与前端响应
+
+| Bus 事件 | 触发时机 | 前端响应 |
+|----------|---------|---------|
+| `message.updated` | 新消息创建、完成 | 添加/更新消息列表 |
+| `message.part.updated` | ToolPart 状态变化 | 更新工具调用 UI |
+| `message.part.delta` | 文字流式输出 | 实时追加文字 |
+| `session.status` | 会话 busy/idle/retry | 更新状态栏 |
+| `question.asked` | question 工具触发 | 显示 QuestionDock |
+| `question.replied/rejected` | 用户回复/拒绝 | 隐藏 QuestionDock |
+| `permission.asked` | 权限检查触发 | 显示 PermissionDock |
+| `permission.replied` | 用户审批 | 隐藏 PermissionDock |
+| `todo.updated` | TodoWrite 工具 | 更新 TodoDock |
+| `session.diff` | 文件变更（snapshot） | 更新文件变更面板 |
+| `session.created/updated` | 会话信息变化 | 更新侧边栏列表 |
+
+### 前端消费（event-reducer）
+
+**`packages/app/src/context/global-sync/event-reducer.ts`**
+
+`applyDirectoryEvent()` 是一个 `switch(event.type)` 的大型 reducer，将每个事件应用到 SolidJS store：
+
+```typescript
+// 例：文字 delta 更新
+case "message.part.delta": {
+  const { messageID, partID, field, delta } = event.properties
+  // 二分搜索定位 part（store 按 id 有序）
+  const result = Binary.search(parts, partID, p => p.id)
+  // SolidJS produce() 细粒度更新
+  setStore("part", messageID, produce(draft => {
+    draft[result.index][field] += delta
+  }))
+}
+```
+
+**性能关键**：
+- `Binary.search` — parts/messages 按 ID 有序存储，O(log n) 查找
+- `produce()` — Immer-like 细粒度变更，避免全量重渲染
+- `reconcile()` — 深度比较，只更新变化的属性
+
+---
+
+## Agent Loop 完整时序图
+
+```
+用户           前端 SDK         HTTP Server          SessionPrompt        LLM Provider
+  │                │                 │                      │                   │
+  │ 发送消息       │                 │                      │                   │
+  │───────────────▶│                 │                      │                   │
+  │                │ POST /prompt    │                      │                   │
+  │                │────────────────▶│                      │                   │
+  │                │                 │ prompt()             │                   │
+  │                │                 │─────────────────────▶│                   │
+  │                │                 │                      │ 创建 UserMessage  │
+  │                │    204 返回     │                      │────┐              │
+  │                │◀────────────────│                      │◀───┘              │
+  │                │                 │                      │ fork runLoop      │
+  │                │                 │                      │────┐              │
+  │           [SSE: message.updated (user)]                 │    │              │
+  │◀──────────────────────────────────────                  │    │              │
+  │                │                 │            while(true):   │              │
+  │                │                 │                      │    │              │
+  │                │                 │                      │ streamText()      │
+  │                │                 │                      │──────────────────▶│
+  │                │                 │                      │ text-delta*       │
+  │                │                 │                      │◀──────────────────│
+  │           [SSE: message.part.delta]                     │                   │
+  │◀──────────────────────────────────────                  │                   │
+  │                │                 │                      │ tool-call         │
+  │                │                 │                      │◀──────────────────│
+  │                │                 │                      │ 创建 ToolPart     │
+  │           [SSE: message.part.updated (tool:running)]    │                   │
+  │◀──────────────────────────────────────                  │                   │
+  │              [工具执行（可能触发 question/permission）]  │                   │
+  │                │                 │                      │ tool-result       │
+  │           [SSE: message.part.updated (tool:completed)]  │                   │
+  │◀──────────────────────────────────────                  │                   │
+  │                │                 │                      │ step-finish       │
+  │           [SSE: session.status(idle)]                   │                   │
+  │◀──────────────────────────────────────                  │                   │
+  │                │                 │                      │ 检查退出条件 → break
+  │                │                 │                      │                   │
+```
+
+---
+
+## 错误处理与 Retry
+
+`processor.ts` 中的 `process()` 被 `Effect.retry(SessionRetry.policy(...))` 包裹：
+
+```typescript
+yield* stream.pipe(
+  Stream.tap(handleEvent),
+  Stream.takeUntil(() => ctx.needsCompaction),
+  Stream.runDrain,
+).pipe(
+  Effect.retry(SessionRetry.policy({
+    provider: input.model.providerID,
+    parse,
+    set: (info) => status.set(sessionID, { type: "retry", attempt, message, next }),
+  })),
+  Effect.catch(halt),           // 不可重试的错误 → halt()
+  Effect.ensuring(cleanup()),   // 永远清理残留 ToolPart
+)
+```
+
+重试时会发布 `session.status(retry)` 事件，前端可显示"正在重试 (n/N)"状态。
+
+---
+
+## 上下文压缩（Compaction）
+
+当 token 使用量接近模型上限时：
+
+```
+step-finish:
+  isOverflow({ tokens, model }) → true
+        │
+        ▼
+ctx.needsCompaction = true
+        │
+Stream.takeUntil(() => ctx.needsCompaction)  ← 立即停止当前流
+        │
+processor.process() 返回 "compact"
+        │
+runLoop:
+  compaction.create({ sessionID, agent, model, auto: true })
+  continue  ← 下一轮循环处理 compaction task
+        │
+        ▼
+compaction task 处理：
+  用 compaction Agent 把历史消息压缩成摘要
+  写入 CompactionMessage
+  继续正常循环
+```
+
+---
+
+## SessionRunState：防并发机制
+
+`SessionRunState.Service` 确保同一个 session 不会并发运行两个 Agent Loop：
+
+```typescript
+ensureRunning(sessionID, onInterrupt, work):
+  ├─ 获取/创建 Runner（per sessionID）
+  └─ runner.ensureRunning(work)
+        ├─ 如果 Runner 空闲 → 直接执行 work
+        └─ 如果 Runner 忙碌 → 中断当前 work
+             └─ 执行 onInterrupt（标记 AssistantMessage 为 aborted）
+             └─ 执行新 work
+```
+
+<Callout type="warning">
+  这保证了用户发送新消息时，前一轮 LLM 生成会被中断，不会产生两个并行的 LLM 请求。
+</Callout>

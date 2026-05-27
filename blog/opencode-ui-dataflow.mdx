@@ -1,0 +1,389 @@
+---
+title: "UI → Agent Loop 完整数据流"
+description: "从用户在 App（GUI）中输入文字，到 Agent Loop 启动，再到 UI 实时更新的全链路分析，涵盖乐观更新、SSE 事件分发、帧节流、细粒度响应式更新等关键机制。"
+---
+
+> 从用户在 App（GUI）中输入文字，到 Agent Loop 启动，再到 UI 实时更新的全链路分析
+
+---
+
+## 总览：单向数据流架构
+
+```
+用户输入
+   │
+   ▼  ① 乐观更新
+SolidJS Store (前端)
+   │
+   ▼  ② HTTP POST /session/:id/promptAsync
+opencode HTTP Server
+   │
+   ▼  ③ Effect.forkIn → 后台 fiber
+SessionPrompt.runLoop() — while(true)
+   │
+   ▼  ④ LLM stream → Bus.publish
+Bus (Effect PubSub)
+   │
+   ▼  ⑤ SSE /event
+前端 EventSource (SDK)
+   │
+   ▼  ⑥ applyDirectoryEvent → store 更新
+SolidJS Store (前端)
+   │
+   ▼  ⑦ SolidJS 细粒度响应
+UI 渲染更新
+```
+
+---
+
+## ① 用户提交（submit.ts）
+
+**`packages/app/src/components/prompt-input/submit.ts`**
+
+`handleSubmit()` 是表单提交的入口，完整流程：
+
+```typescript
+handleSubmit(event):
+  ① 提取输入（文字 + 图片 + context items）
+  ② 获取当前 model/agent 设置
+  ③ 如果是新 session → POST /session/create → navigate 到新路由
+  ④ buildRequestParts() → 构建 API 请求体
+     └─ 文字 → TextPartInput
+     └─ 文件/图片 → FilePartInput（base64 或 URL）
+     └─ @agent 引用 → AgentPartInput
+  ⑤ 乐观更新（立即显示消息，不等服务器）：
+     └─ sync.session.optimistic.add({ message, parts })
+  ⑥ POST /session/:id/promptAsync → 触发后端 runLoop
+  ⑦ 清空输入框
+```
+
+**乐观更新细节**：
+
+<CardGroup cols={3}>
+  <Card title="立即显示" icon="bolt">
+    立即创建 `message.role = "user"` 并注入 store（`optimistic.add`）
+  </Card>
+  <Card title="状态先行" icon="gauge">
+    同时设置 `session_status = busy`，节省 SSE 往返延迟
+  </Card>
+  <Card title="确认替换" icon="check">
+    服务器 SSE 确认到达时，通过 `confirmed` 标记移除乐观副本
+  </Card>
+</CardGroup>
+
+---
+
+## ② HTTP 请求（promptAsync）
+
+**`packages/opencode/src/server/.../handlers/session.ts`**
+
+```typescript
+promptAsync:
+  ① 验证 session 存在
+  ② promptSvc.prompt({ sessionID, agent, model, parts, messageID })
+     └─ 在 scope 中 forkIn（后台异步，HTTP 立即返回 204）
+  ③ 返回 HttpApiSchema.NoContent
+```
+
+`prompt()` 内部处理：
+
+```typescript
+prompt(input):
+  ① 解析图片（base64 → 归一化）
+  ② 创建/更新 UserMessage（写 DB）
+  ③ session.updateMessage() → bus.publish(message.updated)
+  ④ 构建 UserParts（文字 + 文件 + 引用 + ...）
+  ⑤ 调用 loop({ sessionID })
+```
+
+---
+
+## ③ SSE 连接建立（前端）
+
+**`packages/app/src/context/server-sdk.tsx`**
+
+前端在 `onMount` 时启动 SSE 流：
+
+```typescript
+onMount(() => {
+  void serverSDK.event.start()
+})
+```
+
+`event.start()` 是一个持久 async 循环：
+
+```typescript
+while (!abort.signal.aborted && started) {
+  const events = await eventSdk.global.event({ signal })
+  for await (const event of events.stream) {
+    // 批量合并 + 节流（FLUSH_FRAME_MS）
+    queue.push({ directory, payload })
+    schedule()    // setTimeout(flush, remaining_frame)
+  }
+  await wait(RECONNECT_DELAY_MS)   // 断线重连
+}
+```
+
+**关键设计**：
+
+| 机制 | 说明 |
+|------|------|
+| **事件合并（coalescing）** | 同类型同 key 的事件在队列中合并，只保留最新 |
+| **帧节流** | `FLUSH_FRAME_MS` 控制每帧最多 flush 一次，避免 UI 抖动 |
+| **心跳超时** | 15 秒无事件 → 强制重连，防止静默断开 |
+| **可见性监听** | 页面恢复可见时检查是否需要重连 |
+
+---
+
+## ④ SSE 事件分发（event-reducer）
+
+收到事件后，`serverSDK.event.listen` 的回调调用 `applyDirectoryEvent()`，这是一个大型 `switch` reducer：
+
+```typescript
+// packages/app/src/context/server-sync.tsx
+const unsub = serverSDK.event.listen((e) => {
+  const { directory, details: event } = e
+  applyDirectoryEvent({
+    event,
+    store,          // SolidJS store（按 directory 隔离）
+    setStore,
+    ...
+  })
+})
+```
+
+### 关键事件处理（session 相关）
+
+```
+"session.status"
+  → setStore("session_status", sessionID, status)
+  → 前端状态栏 busy/idle/retry
+
+"message.updated"
+  → Binary.search + setStore("message", sessionID, ...)
+  → 消息列表更新
+
+"message.part.updated"
+  → Binary.search + setStore("part", messageID, ...)
+  → 工具调用 UI 更新（ToolPart 状态变化）
+
+"message.part.delta"
+  → setStore("part", messageID, produce(draft => { draft.text += delta }))
+  → 实时文字流显示
+
+"question.asked"
+  → setStore("question", sessionID, [..., newRequest])
+  → 触发 SessionQuestionDock 渲染
+
+"permission.asked"
+  → setStore("permission", sessionID, [..., newRequest])
+  → 触发 SessionPermissionDock 渲染
+
+"todo.updated"
+  → setStore("todo", sessionID, todos)
+  → TodoDock 更新
+```
+
+---
+
+## ⑤ SolidJS 响应式更新链
+
+SolidJS 的**细粒度响应式**确保只有依赖变化的组件重渲染：
+
+```
+store.question[sessionID] 变化
+    │
+    ▼ createMemo（session-composer-state.ts）
+sessionQuestionRequest()    ← 从 session 树找到当前 sessionID 的问题
+    │
+    ▼ createMemo
+questionRequest()           ← 派生状态
+    │
+    ▼ <Show when={state.questionRequest()}>（session-composer-region.tsx）
+<SessionQuestionDock />     ← 渲染问答 UI
+```
+
+```
+store.part[messageID][i].text 变化（来自 delta）
+    │
+    ▼ 只有读取该 part.text 的组件订阅了
+MessageTimeline 中对应的文字节点    ← 局部更新，非整个消息列表重渲染
+```
+
+---
+
+## 完整数据流时序图
+
+```
+用户                前端 App              HTTP Server         SessionPrompt      LLM
+  │                    │                      │                     │              │
+  │ 输入文字 + Enter    │                      │                     │              │
+  │───────────────────▶│                      │                     │              │
+  │                    │ ① 乐观更新 store     │                     │              │
+  │                    │   message(user)      │                     │              │
+  │                    │   status = busy      │                     │              │
+  │◀────────────────── UI 立即显示用户消息     │                     │              │
+  │                    │                      │                     │              │
+  │                    │ ② POST /promptAsync  │                     │              │
+  │                    │─────────────────────▶│                     │              │
+  │                    │    204 立即返回       │ ③ forkIn(loop)      │              │
+  │                    │◀─────────────────────│────────────────────▶│              │
+  │                    │                      │                     │ ④ 写 UserMessage DB
+  │                    │ ⑤ SSE: message.updated(user)              │◀─┘           │
+  │                    │◀──────────────────────────────────────────  │              │
+  │                    │  confirmed → 移除乐观消息                  │              │
+  │                    │                      │                     │ ⑥ streamText │
+  │                    │                      │                     │─────────────▶│
+  │                    │                      │                     │ text-delta   │
+  │                    │                      │                     │◀─────────────│
+  │                    │ ⑦ SSE: message.part.delta                  │              │
+  │◀────────────────── 文字实时出现            │                     │              │
+  │                    │                      │                     │ tool-call    │
+  │                    │                      │                     │◀─────────────│
+  │                    │ ⑧ SSE: message.part.updated(tool:running) │              │
+  │◀────────────────── 工具调用动画            │                     │              │
+  │                    │                      │                     │ tool-result  │
+  │                    │ ⑨ SSE: message.part.updated(tool:completed)              │
+  │◀────────────────── 工具结果展开            │                     │              │
+  │                    │                      │                     │ step-finish  │
+  │                    │ ⑩ SSE: session.status(idle)               │              │
+  │◀────────────────── 状态栏 → 闲置          │                     │              │
+  │                    │                      │                     │              │
+```
+
+---
+
+## session_status 状态机（前端）
+
+`session_status` store 字段控制 UI 的"工作中"状态：
+
+```
+                idle
+                 │
+     ② 乐观更新  │   ⑩ SSE: session.status(idle)
+                 │
+                busy ←──────────────── retry
+                 │                       ↑
+                 │           SessionRetry.policy 触发
+                 │
+           (工具调用中)
+                 │
+            question.asked / permission.asked
+                 │
+              [blocked]    ← 输入框隐藏，Dock 显示
+                 │
+      用户回复 → question.replied / permission.replied
+                 │
+                busy（继续 LLM 生成）
+```
+
+---
+
+## 消息优化：合并与节流
+
+### 事件合并（coalescing）
+
+`server-sdk.tsx` 中，同 `key` 的事件会被合并（只保留最新）：
+
+```typescript
+const key = (directory, payload) => {
+  // message.part.delta 按 partID 合并
+  if (payload.type === "message.part.delta") return `delta:${partID}`
+  // message.part.updated 按 partID 合并
+  if (payload.type === "message.part.updated") return `part:${partID}`
+  // ...
+}
+
+// 队列中同 key 的事件覆盖前一个
+if (k) {
+  const i = coalesced.get(k)
+  if (i !== undefined) {
+    queue[i] = { directory, payload }  // 覆盖旧的
+    continue
+  }
+}
+```
+
+### 帧节流（batching per frame）
+
+```typescript
+const FLUSH_FRAME_MS = 16   // ~60fps
+
+const flush = () => {
+  batch(() => {               // SolidJS batch：合并多次 store 更新为一次渲染
+    for (const event of queue) {
+      applyDirectoryEvent(...)
+    }
+  })
+  queue.length = 0
+}
+
+const schedule = () => {
+  if (timer) return          // 已有定时器，不重复
+  const elapsed = Date.now() - last
+  timer = setTimeout(flush, Math.max(0, FLUSH_FRAME_MS - elapsed))
+}
+```
+
+---
+
+## 多 Session / 子 Session 的 question 路由
+
+Session 支持父子关系（子 Agent 创建子 session）。`session-request-tree.ts` 处理跨 session 的 question/permission 路由：
+
+```typescript
+// 从当前 sessionID 出发，递归找子 session
+function sessionTreeRequest(session, request, sessionID):
+  ① 构建 parent → children Map
+  ② BFS 遍历当前 session 及其所有子 session
+  ③ 找到第一个有待处理请求的 session
+  ④ 返回该 session 的请求
+```
+
+这确保：父 session 的 QuestionDock 能显示**子 session**（子 Agent）发出的问题。
+
+---
+
+## SDK 层（packages/sdk）
+
+前端通过自动生成的 SDK 与服务器通信：
+
+```typescript
+// packages/sdk/js/src/v2/client.ts（自动生成）
+sdk.session.promptAsync({ sessionID, agent, model, parts })
+sdk.question.reply({ requestID, answers })
+sdk.permission.respond({ sessionID, permissionID, response })
+sdk.event.global.event({ signal })   // SSE 流
+```
+
+<Callout type="info">
+  SDK 由 `packages/sdk/js/script/build.ts` 从 OpenAPI schema 自动生成，服务器端 `Effect HttpApi` 自动导出 OpenAPI。
+</Callout>
+
+---
+
+## 关键设计原则总结
+
+<CardGroup cols={2}>
+  <Card title="乐观更新" icon="bolt">
+    提交前立即更新 store，失败时回滚，给用户即时响应
+  </Card>
+  <Card title="单向数据流" icon="arrow-right">
+    HTTP 写入 → SSE 读出，无双向 WebSocket，架构清晰
+  </Card>
+  <Card title="帧节流" icon="gauge">
+    所有 SSE 事件批量处理，每帧最多一次 flush（~60fps）
+  </Card>
+  <Card title="细粒度响应" icon="crosshairs">
+    SolidJS 精确跟踪每个 store 字段的读者，最小化重渲染
+  </Card>
+  <Card title="有序 ID" icon="sort">
+    所有 Message/Part 使用有序 ULID，Binary.search O(log n)
+  </Card>
+  <Card title="跨 session 路由" icon="diagram-project">
+    子 Agent 的问题可以冒泡到父 session 显示
+  </Card>
+  <Card title="断线重连" icon="rotate">
+    SSE 客户端自动重连 + 心跳超时检测（15 秒）
+  </Card>
+</CardGroup>

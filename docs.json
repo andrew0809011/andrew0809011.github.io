@@ -67,7 +67,9 @@
             "expanded": false,
             "pages": [
               "blog/opencode-architecture",
-              "blog/opencode-tools-question"
+              "blog/opencode-tools-question",
+              "blog/opencode-agent-loop",
+              "blog/opencode-ui-dataflow"
             ]
           },
           {
