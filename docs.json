@@ -62,6 +62,15 @@
             ]
           },
           {
+            "group": "opencode",
+            "icon": "code-branch",
+            "expanded": false,
+            "pages": [
+              "blog/opencode-architecture",
+              "blog/opencode-tools-question"
+            ]
+          },
+          {
             "group": "Dify",
             "icon": "lock",
             "expanded": false,

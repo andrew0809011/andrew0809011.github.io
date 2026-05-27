@@ -1,0 +1,255 @@
+---
+title: "opencode 整体架构"
+description: "深入解析 opencode AI 编程助手的整体架构，涵盖核心引擎、会话处理流水线、事件总线与前端数据同步机制。"
+---
+
+> 分析基于源码 `packages/` 目录，时间：2026-05-27
+
+## 项目定位
+
+opencode 是一个 **AI 编程助手**，架构上同时支持：
+
+<CardGroup cols={2}>
+  <Card title="TUI（Terminal UI）" icon="terminal">
+    在终端运行的 CLI 工具，轻量高效
+  </Card>
+  <Card title="App（GUI）" icon="desktop">
+    基于 Tauri/Electron 的桌面应用，以及 Web 版
+  </Card>
+</CardGroup>
+
+核心引擎是一个本地 HTTP 服务器（`packages/opencode/src/server`），所有前端（TUI / GUI）都通过该服务器的 **REST + SSE** 进行通信。
+
+---
+
+## 顶层包结构
+
+```
+packages/
+├── opencode/       ← 核心引擎（Node.js / Bun），暴露 HTTP server
+├── app/            ← GUI 前端（SolidJS + Vite）
+├── core/           ← 跨包共享工具（schema、util、effect 等）
+├── llm/            ← LLM 客户端抽象层（对接 Vercel AI SDK）
+├── sdk/            ← 自动生成的客户端 SDK（TypeScript + JS）
+├── ui/             ← 共享 UI 组件库（SolidJS）
+├── desktop/        ← Tauri 桌面壳
+├── plugin/         ← 插件系统公开接口
+├── mcp/            ← Model Context Protocol 集成
+└── docs/           ← 文档站
+```
+
+---
+
+## 核心引擎（`packages/opencode`）
+
+### Effect 框架
+
+整个后端使用 [Effect](https://effect.website/) 作为函数式运行时，关键特性：
+
+| 特性 | 说明 |
+|------|------|
+| **依赖注入** | 通过 `Context.Service` 定义服务，通过 `Layer` 组合 |
+| **错误管理** | 类型化错误，避免 try/catch |
+| **并发** | Fiber、Scope、Deferred 等原语 |
+
+### 核心服务层（`src/`）
+
+```
+src/
+├── agent/          ← AI Agent 定义（build/plan/explore/general…）
+├── session/        ← 会话生命周期、消息存储、LLM 交互
+│   ├── session.ts  ← 核心 Session CRUD
+│   ├── processor.ts← LLM 流处理器（解析 streaming events）
+│   ├── tools.ts    ← 工具绑定（将 Tool 注入 AI SDK）
+│   └── llm.ts      ← LLM 调用层（包装 Vercel AI SDK）
+├── tool/           ← 所有内置工具实现
+├── question/       ← 用户问答服务（挂起 / 恢复 Deferred）
+├── permission/     ← 权限审批服务（ask/allow/deny）
+├── bus/            ← 事件总线（Effect PubSub）
+├── config/         ← 项目配置读取
+├── provider/       ← AI Provider 管理（openai/anthropic/…）
+├── mcp/            ← MCP 工具集成
+├── lsp/            ← Language Server Protocol 集成
+├── storage/        ← SQLite（Drizzle ORM）
+└── server/         ← HTTP 服务器（Effect HttpApi）
+```
+
+### 会话处理流水线
+
+```
+用户消息
+   │
+   ▼
+session.ts::chat()
+   │ 组装 SystemPrompt + 历史消息
+   ▼
+session/tools.ts::resolve()        ← 将 Tool.Def[] 转为 AI SDK tool 格式
+   │ 注入 Permission.ask 回调
+   ▼
+session/llm.ts::stream()           ← streamText() via Vercel AI SDK
+   │ 返回 AsyncIterable<LLMEvent>
+   ▼
+session/processor.ts::process()    ← 解析流事件
+   ├── text-delta    → 写 TextPart，发 message.part.delta 事件
+   ├── tool-call-streaming-start → 创建 ToolPart(running)，发事件
+   ├── tool-result   → 更新 ToolPart(completed)，发事件
+   └── finish-step   → 记录 token usage
+```
+
+### 事件总线（Bus）
+
+`src/bus/index.ts` 实现了一个基于 Effect PubSub 的**实例级事件总线**。
+
+- **类型定义**：`BusEvent.define(type, Schema)` 注册事件
+- **发布**：`bus.publish(Event.Asked, payload)`
+- **订阅**：`bus.subscribe(Event.Asked)` → `Stream<Payload>`
+- **SSE 桥接**：服务器的 `/event` 端点订阅通配符流，将所有事件作为 SSE 推送给前端
+
+主要事件类型：
+
+| 事件 | 含义 |
+|------|------|
+| `session.created/updated/deleted` | 会话变化 |
+| `message.updated` | 消息更新（含流式） |
+| `message.part.updated/delta` | 消息 Part 实时更新 |
+| `permission.asked/replied` | 权限请求 |
+| `question.asked/replied/rejected` | 用户问答 |
+| `todo.updated` | Todo 列表变化 |
+| `session.status` | 会话忙/闲状态 |
+
+---
+
+## 前端（`packages/app`）
+
+### 技术栈
+
+<CardGroup cols={2}>
+  <Card title="SolidJS" icon="bolt">
+    响应式 UI 框架，细粒度响应式更新
+  </Card>
+  <Card title="TanStack Query" icon="database">
+    服务器状态管理，Mutation / Query
+  </Card>
+  <Card title="Solid Router" icon="route">
+    前端路由管理
+  </Card>
+  <Card title="Tailwind CSS" icon="palette">
+    样式系统
+  </Card>
+</CardGroup>
+
+### 数据同步架构
+
+```
+服务器 SSE (/event)
+        │
+        ▼
+context/server-sync.tsx           ← 全局状态 store（SolidJS store）
+        │ applyDirectoryEvent()
+        ▼
+context/global-sync/event-reducer.ts  ← 事件 → store 更新
+        │
+        ▼
+pages/session/composer/
+  session-composer-state.ts       ← 派生状态（questionRequest, permissionRequest）
+        │
+        ▼
+session-composer-region.tsx       ← 决定显示哪个 Dock
+```
+
+### 页面结构
+
+```
+pages/
+├── home.tsx                  ← 项目选择
+└── session/
+    ├── session.tsx           ← 会话主页面
+    ├── composer/
+    │   ├── session-composer-region.tsx   ← 输入区容器
+    │   ├── session-question-dock.tsx     ← Question 交互 UI
+    │   ├── session-permission-dock.tsx   ← Permission 审批 UI
+    │   ├── session-todo-dock.tsx         ← Todo 面板
+    │   └── session-followup-dock.tsx     ← 后续操作
+    └── session-new-design-view.tsx       ← 消息列表
+```
+
+---
+
+## HTTP API（`packages/opencode/src/server`）
+
+服务器使用 **Effect HttpApi** 框架，自动生成 OpenAPI schema。
+
+主要路由组：
+
+| 组 | 路径 | 说明 |
+|----|------|------|
+| session | `/session` | 创建/查询/运行会话 |
+| question | `/question` | 问答请求列表/回复/拒绝 |
+| permission | `/permission` | 权限请求回复 |
+| event | `/event` | SSE 事件流 |
+| provider | `/provider` | AI Provider 管理 |
+| mcp | `/mcp` | MCP 工具管理 |
+| config | `/config` | 配置读写 |
+
+---
+
+## 存储层
+
+- **SQLite（Drizzle ORM）**：持久化会话、消息、Parts、权限记录
+- **字段命名**：snake_case
+- **文件路径**：`~/.opencode/` 或项目目录下 `.opencode/`
+
+---
+
+## Agent 系统
+
+预置 Agent（`packages/opencode/src/agent/agent.ts`）：
+
+| Agent | 模式 | 说明 |
+|-------|------|------|
+| `build` | primary | 默认 Agent，执行全部工具 |
+| `plan` | primary | 规划模式，禁止大部分编辑工具 |
+| `general` | subagent | 通用子 Agent |
+| `explore` | subagent | 只读代码探索，快速定位文件 |
+| `scout` | subagent | 文档与依赖探索（实验性） |
+| `compaction` | primary/hidden | 上下文压缩 |
+| `title` | primary/hidden | 自动生成会话标题 |
+| `summary` | primary/hidden | 生成会话摘要 |
+
+每个 Agent 有独立的 `permission` 规则集，控制哪些工具可用 / 需审批 / 禁止。
+
+---
+
+## 插件系统（`packages/plugin`）
+
+插件可以：
+- 注册自定义工具（`ToolDefinition`）
+- 监听生命周期钩子（`tool.execute.before/after`、`chat.system.transform`）
+- 通过 `packages/opencode/src/plugin` 的 `Plugin.Service` 调用
+
+---
+
+## 整体数据流
+
+```
+用户输入 (GUI/TUI)
+     │  HTTP POST /session/:id/chat
+     ▼
+opencode 服务器
+     │
+     ├── Agent 解析 → 权限检查
+     │
+     ├── LLM.stream() ←─── Vercel AI SDK ←─── 各 AI Provider
+     │        │
+     │        │ 流事件
+     │        ▼
+     │   SessionProcessor
+     │        │
+     │        ├── 写 DB (MessagePart)
+     │        ├── 执行 Tool → question/permission 暂停
+     │        └── bus.publish(events)
+     │                │
+     │                │ SSE
+     ▼                ▼
+前端 event-reducer → SolidJS store → UI 更新
+```

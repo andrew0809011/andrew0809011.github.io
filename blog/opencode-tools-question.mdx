@@ -1,0 +1,398 @@
+---
+title: "内置工具系统与 Question 机制"
+description: "深入解析 opencode 内置工具架构、工具注册表、工具绑定流程，以及 Question 工具如何通过 Effect Deferred 实现 LLM 与用户之间的异步交互。"
+---
+
+> 分析基于 `packages/opencode/src/tool/` 和 `packages/app/src/pages/session/composer/`
+
+---
+
+## 工具系统整体架构
+
+### 核心接口
+
+**`packages/opencode/src/tool/tool.ts`**
+
+```typescript
+// 工具定义接口
+interface Def<Parameters, Metadata> {
+  id: string
+  description: string
+  parameters: Parameters          // Effect Schema，用于参数验证
+  execute(args, ctx: Context): Effect<ExecuteResult<Metadata>>
+}
+
+// 工具上下文（每次调用时注入）
+type Context = {
+  sessionID: SessionID
+  messageID: MessageID
+  agent: string
+  abort: AbortSignal
+  callID?: string
+  messages: MessageV2.WithParts[]
+  metadata(input): Effect<void>   // 更新 UI 显示的 title/metadata
+  ask(input): Effect<void>        // 触发权限审批
+}
+```
+
+`Tool.define()` 是工厂函数，接受工具 ID 和一个 Effect，Effect 内部可以 yield 依赖的服务。
+
+---
+
+### 工具注册表（ToolRegistry）
+
+**`packages/opencode/src/tool/registry.ts`**
+
+`ToolRegistry.Service` 在启动时初始化所有内置工具，并负责：
+
+1. 实例化所有内置工具（通过 `yield* QuestionTool` 等 Effect 求值）
+2. 加载插件自定义工具（通过 `Plugin.Service`）
+3. 按 Agent 权限过滤工具（`.tools({ agent, modelID, providerID })`）
+
+```typescript
+// 内置工具列表（部分）
+const question  = yield* QuestionTool
+const task      = yield* TaskTool
+const read      = yield* ReadTool
+const shell     = yield* ShellTool
+const edit      = yield* EditTool
+const write     = yield* WriteTool
+const glob      = yield* GlobTool
+const grep      = yield* GrepTool
+const webfetch  = yield* WebFetchTool
+const plan      = yield* PlanExitTool
+const todo      = yield* TodoWriteTool
+// ... 共约 15+ 内置工具
+```
+
+---
+
+### 工具绑定到 LLM（tools.ts）
+
+**`packages/opencode/src/session/tools.ts`**
+
+在每次 chat 请求时，`SessionTools.resolve()` 将 `Tool.Def[]` 转换为 Vercel AI SDK 格式：
+
+```typescript
+tools[item.id] = tool({
+  description: item.description,
+  inputSchema: jsonSchema(schema),
+  execute(args, options) {
+    return run.promise(
+      Effect.gen(function* () {
+        const ctx = context(args, options)     // 构建 Tool.Context
+        yield* plugin.trigger("tool.execute.before", ...)
+        const result = yield* item.execute(args, ctx)   // ← 实际执行工具
+        yield* plugin.trigger("tool.execute.after", ...)
+        return result
+      })
+    )
+  }
+})
+```
+
+<Callout type="info">
+  `EffectBridge.make()` 将 Effect fiber 桥接到 Promise（Vercel AI SDK 需要 Promise）。`permission.ask()` 是一个阻塞 Effect，会挂起直到用户审批。
+</Callout>
+
+---
+
+## 完整工具列表
+
+| 工具 ID | 文件 | 说明 |
+|---------|------|------|
+| `question` | `question.ts` | 向用户提问，获取结构化答案 |
+| `read` | `read.ts` | 读取文件内容 |
+| `edit` | `edit.ts` | 编辑文件（字符串替换） |
+| `write` | `write.ts` | 写入/创建文件 |
+| `apply_patch` | `apply_patch.ts` | 应用 unified diff patch |
+| `glob` | `glob.ts` | 文件 glob 搜索 |
+| `grep` | `grep.ts` | 代码内容搜索（ripgrep） |
+| `bash`/`shell` | `shell/` | 执行 shell 命令 |
+| `webfetch` | `webfetch.ts` | 抓取网页内容 |
+| `websearch` | `websearch.ts` | 联网搜索 |
+| `task` | `task.ts` | 启动子 Agent |
+| `todowrite` | `todo.ts` | 管理 Todo 列表 |
+| `plan` | `plan.ts` | 进入/退出 plan 模式 |
+| `skill` | `skill.ts` | 加载技能文档 |
+| `lsp` | `lsp.ts` | LSP 代码分析 |
+| `repo_clone` | `repo_clone.ts` | 克隆外部仓库 |
+| `repo_overview` | `repo_overview.ts` | 仓库结构概览 |
+
+---
+
+## Question 工具深度解析
+
+### 工具定义层
+
+**`packages/opencode/src/tool/question.ts`**
+
+```typescript
+export const QuestionTool = Tool.define<typeof Parameters, Metadata, Question.Service>(
+  "question",
+  Effect.gen(function* () {
+    const question = yield* Question.Service  // ← DI 注入问答服务
+
+    return {
+      description: DESCRIPTION,
+      parameters: Parameters,   // Schema: { questions: QuestionPrompt[] }
+      execute: (params, ctx) =>
+        Effect.gen(function* () {
+          // ① 调用 Question.Service.ask()，阻塞当前 fiber
+          const answers = yield* question.ask({
+            sessionID: ctx.sessionID,
+            questions: params.questions,
+            tool: ctx.callID
+              ? { messageID: ctx.messageID, callID: ctx.callID }
+              : undefined,
+          })
+
+          // ② answers 收到后，格式化返回给 LLM
+          const formatted = params.questions
+            .map((q, i) => `"${q.question}"="${answers[i]?.join(", ") || "Unanswered"}"`)
+            .join(", ")
+
+          return {
+            title: `Asked ${params.questions.length} question(s)`,
+            output: `User has answered your questions: ${formatted}. You can now continue.`,
+            metadata: { answers },
+          }
+        })
+    }
+  })
+)
+```
+
+---
+
+### 问答服务层（核心 Deferred 机制）
+
+**`packages/opencode/src/question/index.ts`**
+
+这是整个 question 工具的核心——使用 Effect `Deferred` 实现异步挂起/恢复。
+
+```typescript
+// State: 维护所有待回答的问题
+interface State {
+  pending: Map<QuestionID, {
+    info: Request
+    deferred: Deferred<ReadonlyArray<Answer>, RejectedError>
+  }>
+}
+```
+
+**`ask()` 方法流程：**
+
+```typescript
+const ask = function* (input: { sessionID, questions, tool? }) {
+  const id = QuestionID.ascending()       // ① 生成唯一 ID
+  const deferred = yield* Deferred.make() // ② 创建 Deferred（类似 Promise）
+
+  pending.set(id, { info, deferred })     // ③ 存入 pending Map
+
+  yield* bus.publish(Event.Asked, info)   // ④ 发布事件，触发前端显示
+
+  // ⑤ 阻塞等待用户回答——Deferred.await 挂起当前 fiber
+  return yield* Effect.ensuring(
+    Deferred.await(deferred),
+    Effect.sync(() => { pending.delete(id) })  // 清理
+  )
+}
+```
+
+**`reply()` 方法流程：**
+
+```typescript
+const reply = function* (input: { requestID, answers }) {
+  const existing = pending.get(input.requestID)
+  pending.delete(input.requestID)
+
+  yield* bus.publish(Event.Replied, { sessionID, requestID, answers })
+
+  yield* Deferred.succeed(existing.deferred, input.answers)  // ← 恢复被挂起的 fiber！
+}
+```
+
+<Callout type="warning">
+  **关键洞察**：`Deferred.await(deferred)` 和 `Deferred.succeed(deferred, answers)` 是跨 Effect fiber 的同步点。LLM 工具调用的 fiber 被挂起，直到用户通过 HTTP API 调用 `reply`，才会恢复执行并将答案返回给 LLM。
+</Callout>
+
+---
+
+### 事件流（question.asked → SSE → 前端）
+
+```
+Question.ask()
+    │
+    │ bus.publish(Event.Asked, { id, sessionID, questions })
+    ▼
+Bus.Service (PubSub)
+    │
+    │ wildcard subscription
+    ▼
+GET /event  (SSE stream)
+    │
+    │ text/event-stream
+    ▼
+前端 EventSource
+    │
+    ▼
+applyDirectoryEvent() in event-reducer.ts
+    │ case "question.asked":
+    │   store.question[sessionID].push(request)
+    ▼
+SolidJS 响应式系统
+    │
+    ▼
+session-composer-state.ts
+    │ sessionQuestionRequest() → questionRequest()
+    ▼
+session-composer-region.tsx
+    │ <Show when={state.questionRequest()}>
+    ▼
+<SessionQuestionDock request={request} />   ← 渲染 Question UI
+```
+
+---
+
+### 前端 Question UI（SessionQuestionDock）
+
+**`packages/app/src/pages/session/composer/session-question-dock.tsx`**
+
+**状态管理：**
+
+```typescript
+const [store, setStore] = createStore({
+  tab: 0,        // 当前显示第几个问题（支持多问题分页）
+  answers: [],   // 每个问题的已选答案
+  custom: [],    // 自定义输入文本
+  customOn: [],  // 是否启用自定义输入
+  editing: false,
+  focus: 0,
+})
+```
+
+**提交回答：**
+
+```typescript
+const replyMutation = useMutation(() => ({
+  mutationFn: (answers) =>
+    sdk.client.question.reply({ requestID: props.request.id, answers }),
+  onMutate: () => props.onSubmit(),  // 立即关闭 Dock（乐观更新）
+}))
+```
+
+**键盘导航：**
+
+| 快捷键 | 行为 |
+|--------|------|
+| `ArrowUp/Down/Left/Right` | 选项间移动焦点 |
+| `Cmd/Ctrl+Enter` | 确认当前问题，跳到下一题 |
+| `Escape` | 拒绝（reject）整个 question 请求 |
+
+**多问题支持：** 上方进度条显示每道题的完成状态，`next()` / `back()` 在题目间切换。未提交时答案缓存在 `cache` Map（组件卸载但 session 未关闭时保留）。
+
+---
+
+### HTTP API 层
+
+**`packages/opencode/src/server/routes/instance/httpapi/handlers/question.ts`**
+
+```typescript
+GET  /question            → svc.list()                       // 获取待回答问题列表
+PUT  /question/:id/reply  → svc.reply({ requestID, answers }) // 提交答案
+PUT  /question/:id/reject → svc.reject(requestID)            // 拒绝
+```
+
+`reply()` 调用链：
+
+```
+HTTP PUT /question/:id/reply
+    │
+    ▼
+Question.Service.reply()
+    │
+    ▼
+Deferred.succeed(deferred, answers)   ← 恢复 LLM 工具调用 fiber
+    │
+    ▼
+bus.publish(Event.Replied)            ← SSE 通知前端移除 Question UI
+```
+
+---
+
+## Permission 与 Question 的对比
+
+Permission（权限审批）与 Question（用户问答）共享相同的架构模式：
+
+| 方面 | Question | Permission |
+|------|----------|------------|
+| 触发时机 | LLM 主动调用 `question` 工具 | 工具执行前的权限检查 |
+| 挂起机制 | `Deferred.await()` | `Deferred.await()` |
+| 事件 | `question.asked/replied/rejected` | `permission.asked/replied` |
+| UI 组件 | `SessionQuestionDock` | `SessionPermissionDock` |
+| 回复端点 | `PUT /question/:id/reply` | `PUT /permission/:id/respond` |
+| 拒绝行为 | `RejectedError` → 工具返回错误给 LLM | `RejectedError` → 工具执行中断 |
+
+---
+
+## Question 完整生命周期时序
+
+```
+LLM                  SessionProcessor       Question.Service     Bus      前端 SSE       QuestionDock
+ │                         │                      │               │            │               │
+ │  工具调用: question      │                      │               │            │               │
+ │─────────────────────────▶                      │               │            │               │
+ │                         │ question.ask()        │               │            │               │
+ │                         │──────────────────────▶               │            │               │
+ │                         │                      │ Deferred.make │            │               │
+ │                         │                      │──┐            │            │               │
+ │                         │                      │◀─┘            │            │               │
+ │                         │                      │ bus.publish   │            │               │
+ │                         │                      │──────────────▶│            │               │
+ │                         │                      │               │ SSE event  │               │
+ │                         │                      │               │───────────▶│ question.asked│
+ │                         │                      │               │            │──────────────▶│
+ │                         │                      │               │            │               │ 渲染 UI
+ │           [fiber 挂起，等待 Deferred]           │               │            │               │
+ │                         │                      │               │            │  用户选择答案  │
+ │                         │                      │               │  PUT /question/:id/reply   │
+ │                         │                      │◀──────────────────────────────────────────│
+ │                         │                      │ Deferred.succeed → fiber 恢复              │
+ │                         │ answers 返回          │               │            │               │
+ │                         │◀──────────────────────               │            │               │
+ │                         │                      │ bus.publish(Replied)       │               │
+ │                         │                      │──────────────▶│            │               │
+ │  工具结果（含用户答案）   │                      │               │───────────▶│──────────────▶│
+ │◀─────────────────────────                      │               │            │               │ 移除 UI
+ │  LLM 继续生成            │                      │               │            │               │
+```
+
+---
+
+## 关键设计模式总结
+
+<CardGroup cols={2}>
+  <Card title="Effect Deferred 作为异步门" icon="door-open">
+    Question 和 Permission 都用 `Deferred` 将"等待外部输入"建模为 Effect，支持类型化错误（`RejectedError`），比传统回调/Promise 链更简洁。
+  </Card>
+  <Card title="事件驱动的 UI 同步" icon="arrows-rotate">
+    后端不直接操作前端，而是通过 Bus → SSE → event-reducer 的单向数据流更新前端 store。
+  </Card>
+  <Card title="乐观更新" icon="bolt">
+    用户点击提交后，`onMutate` 立即关闭 Dock，然后异步发送 HTTP 请求，失败时通过 toast 提示错误。
+  </Card>
+  <Card title="答案缓存机制" icon="floppy-disk">
+    `cache` Map 在组件卸载时保存用户的半成品答案，重新打开时恢复，避免误操作丢失输入。
+  </Card>
+</CardGroup>
+
+### Permission 与 Question 的流水线优先级
+
+`session-composer-state.ts` 的 `blocked()` 信号：
+
+```typescript
+const blocked = createMemo(() => !!permissionRequest() || !!questionRequest())
+```
+
+只要有 permission 或 question 待处理，输入框就隐藏（`showComposer = !blocked || child`）。两者不会同时显示，优先显示先到达的请求。
