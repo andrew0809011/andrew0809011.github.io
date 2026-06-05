@@ -44,6 +44,14 @@
             ]
           },
           {
+            "group": "Debug Notes",
+            "icon": "bug",
+            "expanded": false,
+            "pages": [
+              "blog/sqlalchemy-detached-instance-error"
+            ]
+          },
+          {
             "group": "OpenHarness",
             "icon": "diagram-project",
             "expanded": false,
