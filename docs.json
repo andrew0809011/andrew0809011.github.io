@@ -48,7 +48,8 @@
             "icon": "bug",
             "expanded": false,
             "pages": [
-              "blog/sqlalchemy-detached-instance-error"
+              "blog/sqlalchemy-detached-instance-error",
+              "blog/alembic-branch-migration-fix"
             ]
           },
           {
